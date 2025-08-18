@@ -1,4 +1,4 @@
-import os, sys, base64, threading
+import os, sys, base64, threading, uuid
 from typing import Dict, List, Optional
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -49,6 +49,8 @@ class GenerateResponse(BaseModel):
     svg_data_url: str
     saved_svg_path: Optional[str] = None
     saved_json_path: Optional[str] = None
+    svg_filename: Optional[str] = None
+    json_filename: Optional[str] = None
 
 app = FastAPI(title="Blueprint Generator API", version="1.0.0")
 app.add_middleware(
@@ -108,9 +110,11 @@ def generate(
 
     out_dir = os.path.join(REPO_ROOT, "generated")
     os.makedirs(out_dir, exist_ok=True)
-    base = "blueprint"
-    json_path = os.path.join(out_dir, f"{base}.json")
-    svg_path = os.path.join(out_dir, f"{base}.svg")
+    base = uuid.uuid4().hex
+    json_filename = f"{base}.json"
+    svg_filename = f"{base}.svg"
+    json_path = os.path.join(out_dir, json_filename)
+    svg_path = os.path.join(out_dir, svg_filename)
 
     with open(json_path, "w", encoding="utf-8") as f:
         import json as pyjson
@@ -122,4 +126,6 @@ def generate(
         svg_data_url=svg_to_data_url(svg_path),
         saved_svg_path=svg_path,
         saved_json_path=json_path,
+        svg_filename=svg_filename,
+        json_filename=json_filename,
     )
