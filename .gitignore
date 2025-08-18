@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+checkpoints/
+datasets/
+dataset/train.jsonl
+dataset/val.jsonl
+training_log.txt
+generated/
+*.pth
+*.zip
+*.log
+.env
+.DS_Store

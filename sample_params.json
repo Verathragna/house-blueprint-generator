@@ -1,0 +1,22 @@
+{
+  "houseStyle": "Craftsman",
+  "bedrooms": 4,
+  "bathrooms": {
+    "full": 3,
+    "half": 1
+  },
+  "foundationType": "basement",
+  "bonusRoom": true,
+  "attic": true,
+  "fireplace": true,
+  "ownerSuiteLocation": "main floor",
+  "masterBathOption": "both",
+  "ceilingHeight": 10,
+  "garage": {
+    "attached": true,
+    "carCount": 2
+  },
+  "vaultedCeilings": {
+    "Living Room": true
+  }
+}
