@@ -24,8 +24,11 @@ class PairDataset(Dataset):
 
     def __getitem__(self, idx):
         row = self.rows[idx]
-        x, y = self.tk.build_training_pair(row["params"], row["layout"])
-        return torch.tensor(x, dtype=torch.long), torch.tensor(y, dtype=torch.long)
+        # ensure coordinate fields are present so position tokens can be learned
+        for room in row.get("layout", {}).get("layout", {}).get("rooms", []):
+            room.setdefault("position", {"x": 0, "y": 0})
+        x_ids, y_ids = self.tk.build_training_pair(row["params"], row["layout"])
+        return torch.tensor(x_ids, dtype=torch.long), torch.tensor(y_ids, dtype=torch.long)
 
 def collate_fn(batch):
     xs, ys = zip(*batch)
