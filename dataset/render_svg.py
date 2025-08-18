@@ -1,13 +1,18 @@
 import svgwrite
 
 def render_layout_svg(layout_data, svg_path, scale=10):
-    dwg = svgwrite.Drawing(svg_path, profile='tiny')
+    rooms = layout_data.get("layout", {}).get("rooms", [])
+
+    # Determine canvas bounds based on room coordinates
+    max_x = max((r.get("position", {}).get("x", 0) + r.get("size", {}).get("width", 0)) for r in rooms) * scale if rooms else 0
+    max_y = max((r.get("position", {}).get("y", 0) + r.get("size", {}).get("length", 0)) for r in rooms) * scale if rooms else 0
+    dwg = svgwrite.Drawing(svg_path, profile='tiny', size=(max_x, max_y))
 
     font_main = "Arial"
     font_size_label = 12
     font_size_sub = 10
 
-    for room in layout_data.get("layout", {}).get("rooms", []):
+    for room in rooms:
         x = room.get("position", {}).get("x", 0) * scale
         y = room.get("position", {}).get("y", 0) * scale
         w = room.get("size", {}).get("width", 12) * scale

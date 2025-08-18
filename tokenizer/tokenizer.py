@@ -23,6 +23,10 @@ class BlueprintTokenizer:
             "STYLE_CRAFTSMAN", "STYLE_COLONIAL", "STYLE_MODERN",
             "W10","W12","W14","W16","W18","W20","L8","L10","L12","L14","L16","L20",
         ]
+        # Discrete x/y position tokens on a 2ft grid from 0-40ft
+        for n in range(0, 42, 2):
+            tokens.append(f"X{n}")
+            tokens.append(f"Y{n}")
         self.token_to_id: Dict[str,int] = {"<PAD>": PAD_ID, "<BOS>": BOS_ID, "<EOS>": EOS_ID, "<SEP>": SEP_ID}
         i = max(self.token_to_id.values()) + 1
         for t in tokens:
@@ -42,6 +46,11 @@ class BlueprintTokenizer:
     def _bucket_size(self, feet: float, buckets=(8,10,12,14,16,20)) -> str:
         best = min(buckets, key=lambda b: abs(b - feet))
         return f"W{best}"
+
+    def _bucket_pos(self, coord: float, step: int = 2, max_val: int = 40, prefix: str = "X") -> str:
+        """Quantize an x/y coordinate into a discrete token."""
+        c = max(0, min(max_val, int(round(coord / step) * step)))
+        return f"{prefix}{c}"
 
     # ---- PARAMS ENCODING ----
     def encode_params(self, params: dict) -> List[int]:
@@ -109,8 +118,11 @@ class BlueprintTokenizer:
             l = float(r.get("size", {}).get("length", 12))
             wtok = self._bucket_size(w)  # Wxx
             ltok = self._bucket_size(l).replace("W","L")
-            for tk in (wtok, ltok):
-                if tk in self.token_to_id: ids.append(self.token_to_id[tk])
+            xtok = self._bucket_pos(r.get("position", {}).get("x", 0), prefix="X")
+            ytok = self._bucket_pos(r.get("position", {}).get("y", 0), prefix="Y")
+            for tk in (wtok, ltok, xtok, ytok):
+                if tk in self.token_to_id:
+                    ids.append(self.token_to_id[tk])
         ids.append(EOS_ID)
         return ids
 
@@ -124,27 +136,72 @@ class BlueprintTokenizer:
 
     def decode_layout_tokens(self, token_list: List[int]) -> dict:
         rooms = []
-        last_w = last_l = None
+        last_w = last_l = last_x = last_y = None
         for tid in token_list:
-            if tid in (PAD_ID, BOS_ID, SEP_ID): continue
-            if tid == EOS_ID: break
+            if tid in (PAD_ID, BOS_ID, SEP_ID):
+                continue
+            if tid == EOS_ID:
+                break
             tok = self.id_to_token.get(tid, "")
             if tok.startswith("W"):
-                try: last_w = int(tok[1:])
-                except: pass
+                try:
+                    last_w = int(tok[1:])
+                except:
+                    pass
                 continue
             if tok.startswith("L"):
-                try: last_l = int(tok[1:])
-                except: pass
+                try:
+                    last_l = int(tok[1:])
+                except:
+                    pass
                 continue
-            if tok in ("BEDROOM","BATHROOM","KITCHEN","LIVING","DINING","OFFICE","LAUNDRY","GARAGE","CLOSET","BONUS"):
+            if tok.startswith("X"):
+                try:
+                    last_x = int(tok[1:])
+                except:
+                    pass
+                continue
+            if tok.startswith("Y"):
+                try:
+                    last_y = int(tok[1:])
+                except:
+                    pass
+                continue
+            if tok in (
+                "BEDROOM",
+                "BATHROOM",
+                "KITCHEN",
+                "LIVING",
+                "DINING",
+                "OFFICE",
+                "LAUNDRY",
+                "GARAGE",
+                "CLOSET",
+                "BONUS",
+            ):
                 rtype_map = {
-                    "BEDROOM": "Bedroom", "BATHROOM": "Bathroom", "KITCHEN": "Kitchen",
-                    "LIVING": "Living Room", "DINING": "Dining Room", "OFFICE": "Office",
-                    "LAUNDRY": "Laundry Room", "GARAGE": "Garage", "CLOSET": "Closet", "BONUS": "Bonus Room"
+                    "BEDROOM": "Bedroom",
+                    "BATHROOM": "Bathroom",
+                    "KITCHEN": "Kitchen",
+                    "LIVING": "Living Room",
+                    "DINING": "Dining Room",
+                    "OFFICE": "Office",
+                    "LAUNDRY": "Laundry Room",
+                    "GARAGE": "Garage",
+                    "CLOSET": "Closet",
+                    "BONUS": "Bonus Room",
                 }
-                wtok, ltok = self.default_room_dims.get(tok, ("W12","L12"))
-                width = last_w or int(wtok[1:]); length = last_l or int(ltok[1:])
-                rooms.append({"type": rtype_map[tok], "position": {"x":0,"y":0}, "size": {"width": width, "length": length}})
-                last_w = last_l = None
+                wtok, ltok = self.default_room_dims.get(tok, ("W12", "L12"))
+                width = last_w or int(wtok[1:])
+                length = last_l or int(ltok[1:])
+                x = last_x or 0
+                y = last_y or 0
+                rooms.append(
+                    {
+                        "type": rtype_map[tok],
+                        "position": {"x": x, "y": y},
+                        "size": {"width": width, "length": length},
+                    }
+                )
+                last_w = last_l = last_x = last_y = None
         return {"layout": {"rooms": rooms}}

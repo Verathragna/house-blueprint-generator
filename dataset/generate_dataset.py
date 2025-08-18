@@ -23,17 +23,20 @@ def sample_parameters(i):
     }
 
 def dummy_layout(i):
-    # very simple rectangular rooms for demo; rules model can replace this
-    return {
-        "layout": {
-            "rooms": [
-                {"type": "Bedroom", "position": {"x": 0, "y": 0}, "size": {"width": 12, "length": 12}},
-                {"type": "Bathroom", "position": {"x": 12, "y": 0}, "size": {"width": 8, "length": 8}},
-                {"type": "Kitchen", "position": {"x": 0, "y": 12}, "size": {"width": 14, "length": 12}},
-                {"type": "Living Room", "position": {"x": 14, "y": 12}, "size": {"width": 16, "length": 14}},
-            ]
-        }
-    }
+    """Generate a simple layout with x/y coordinates on a grid.
+
+    The intent is to provide coordinate supervision for the model, so we
+    shift a base offset for each sample and place rooms relative to it.
+    """
+    base_x = (i * 3) % 20  # keep within 0-40ft bounds used by tokenizer
+    base_y = (i * 5) % 20
+    rooms = [
+        {"type": "Bedroom", "position": {"x": base_x, "y": base_y}, "size": {"width": 12, "length": 12}},
+        {"type": "Bathroom", "position": {"x": base_x + 12, "y": base_y}, "size": {"width": 8, "length": 8}},
+        {"type": "Kitchen", "position": {"x": base_x, "y": base_y + 12}, "size": {"width": 14, "length": 12}},
+        {"type": "Living Room", "position": {"x": base_x + 14, "y": base_y + 12}, "size": {"width": 16, "length": 14}},
+    ]
+    return {"layout": {"rooms": rooms}}
 
 def main(n=50):
     for i in range(n):

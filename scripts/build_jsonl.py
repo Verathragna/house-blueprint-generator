@@ -12,6 +12,9 @@ for f in files:
     lp = os.path.join(IN_DIR, f"layout_{idx}.json")
     if os.path.exists(lp):
         layout = json.load(open(lp, "r", encoding="utf-8"))
+        # ensure all rooms contain coordinate fields
+        for room in layout.get("layout", {}).get("rooms", []):
+            room.setdefault("position", {"x": 0, "y": 0})
         pairs.append({"params": inp, "layout": layout})
 
 random.shuffle(pairs)
