@@ -1,4 +1,4 @@
-import os, sys, base64, json, threading
+import os, sys, base64, threading
 from typing import Dict, List, Optional
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -8,8 +8,9 @@ CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.abspath(os.path.join(CURRENT_DIR, ".."))
 sys.path.insert(0, REPO_ROOT)
 
-from tokenizer.tokenizer import BlueprintTokenizer, SEP_ID, EOS_ID
+from tokenizer.tokenizer import BlueprintTokenizer
 from models.layout_transformer import LayoutTransformer
+from models.decoding import decode
 from dataset.render_svg import render_layout_svg
 
 CHECKPOINT = os.path.join(REPO_ROOT, "checkpoints", "model_latest.pth")
@@ -74,26 +75,10 @@ def _get_model():
             _model.eval()
         return _model
 
-def greedy_decode(model, prefix_ids, max_len=160):
-    import torch
-    seq = list(prefix_ids)
-    with torch.no_grad():
-        for _ in range(max_len):
-            x = torch.tensor([seq], dtype=torch.long)
-            logits = model(x)[:, -1, :]
-            nxt = int(logits.argmax(dim=-1))
-            seq.append(nxt)
-            if nxt == EOS_ID:
-                break
-    if SEP_ID in seq:
-        i = seq.index(SEP_ID) + 1
-        return seq[i:]
-    return seq
 
 def svg_to_data_url(svg_path: str) -> str:
     with open(svg_path, "rb") as f:
         data = f.read()
-    import base64
     b64 = base64.b64encode(data).decode("utf-8")
     return f"data:image/svg+xml;base64,{b64}"
 
@@ -102,11 +87,23 @@ def health():
     return {"ok": True}
 
 @app.post("/generate", response_model=GenerateResponse)
-def generate(params: Params):
+def generate(
+    params: Params,
+    strategy: str = "greedy",
+    temperature: float = 1.0,
+    beam_size: int = 5,
+):
     model = _get_model()
 
     prefix = _tokenizer.encode_params(params.dict())
-    layout_tokens = greedy_decode(model, prefix, max_len=160)
+    layout_tokens = decode(
+        model,
+        prefix,
+        max_len=160,
+        strategy=strategy,
+        temperature=temperature,
+        beam_size=beam_size,
+    )
     layout_json = _tokenizer.decode_layout_tokens(layout_tokens)
 
     out_dir = os.path.join(REPO_ROOT, "generated")
