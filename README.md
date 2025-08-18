@@ -14,7 +14,7 @@ pip install -r requirements.txt
 
 # 1) Build synthetic data + pairs
 python dataset/generate_dataset.py
-python scripts/build_jsonl.py
+python scripts/build_jsonl.py --seed 42  # use --seed for reproducible shuffling
 
 # 2) Train
 python training/train.py --epochs 10 --batch 16
@@ -26,3 +26,5 @@ python Generate/generate_blueprint.py --params_json sample_params.json --out_pre
 DEVICE=cuda uvicorn api.app:app --host 0.0.0.0 --port 8000 --reload
 # POST to /generate with params JSON; response contains layout JSON and data-URL SVG
 ```
+
+The `--seed` flag on `build_jsonl.py` ensures the shuffled train/val split is reproducible.
