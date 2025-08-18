@@ -14,6 +14,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--params_json", type=str, required=True)
     ap.add_argument("--out_prefix", type=str, default="generated_blueprint")
+    ap.add_argument("--device", type=str, default="cpu", help="Device to run the model on")
     ap.add_argument(
         "--strategy",
         type=str,
@@ -30,7 +31,8 @@ def main():
     model = LayoutTransformer(tk.get_vocab_size())
     if not os.path.exists(CKPT):
         raise FileNotFoundError("Checkpoint not found. Train first (checkpoints/model_latest.pth).")
-    model.load_state_dict(torch.load(CKPT, map_location="cpu"))
+    model.load_state_dict(torch.load(CKPT, map_location=args.device))
+    model.to(args.device)
 
     prefix = tk.encode_params(params)
     layout_tokens = decode(

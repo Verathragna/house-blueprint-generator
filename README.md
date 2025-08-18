@@ -19,10 +19,10 @@ python scripts/build_jsonl.py
 # 2) Train
 python training/train.py --epochs 10 --batch 16
 
-# 3) Generate locally
-python Generate/generate_blueprint.py --params_json sample_params.json --out_prefix my_blueprint
+# 3) Generate locally (set device to "cpu" or "cuda")
+python Generate/generate_blueprint.py --params_json sample_params.json --out_prefix my_blueprint --device cuda
 
-# 4) Run API
-uvicorn api.app:app --host 0.0.0.0 --port 8000 --reload
+# 4) Run API (optional DEVICE env var controls model device)
+DEVICE=cuda uvicorn api.app:app --host 0.0.0.0 --port 8000 --reload
 # POST to /generate with params JSON; response contains layout JSON and data-URL SVG
 ```
