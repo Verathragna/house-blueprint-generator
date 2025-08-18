@@ -14,6 +14,7 @@ from models.decoding import decode
 from dataset.render_svg import render_layout_svg
 
 CHECKPOINT = os.path.join(REPO_ROOT, "checkpoints", "model_latest.pth")
+DEVICE = os.environ.get("DEVICE", "cpu")
 
 class Bathrooms(BaseModel):
     full: int = 2
@@ -73,7 +74,8 @@ def _get_model():
             if not os.path.exists(CHECKPOINT):
                 raise FileNotFoundError("Model checkpoint not found. Train first.")
             _model = LayoutTransformer(_tokenizer.get_vocab_size())
-            _model.load_state_dict(torch.load(CHECKPOINT, map_location="cpu"))
+            _model.load_state_dict(torch.load(CHECKPOINT, map_location=DEVICE))
+            _model.to(DEVICE)
             _model.eval()
         return _model
 

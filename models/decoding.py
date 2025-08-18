@@ -14,9 +14,10 @@ def greedy_decode(model, prefix_ids, max_len: int = 160):
     """Generate tokens using greedy argmax decoding."""
     model.eval()
     seq = list(prefix_ids)
+    device = next(model.parameters()).device
     with torch.no_grad():
         for _ in range(max_len):
-            x = torch.tensor([seq], dtype=torch.long)
+            x = torch.tensor([seq], dtype=torch.long, device=device)
             logits = model(x)[:, -1, :]
             nxt = int(logits.argmax(dim=-1))
             seq.append(nxt)
@@ -34,9 +35,10 @@ def sample_decode(
     """Generate tokens using temperature sampling."""
     model.eval()
     seq = list(prefix_ids)
+    device = next(model.parameters()).device
     with torch.no_grad():
         for _ in range(max_len):
-            x = torch.tensor([seq], dtype=torch.long)
+            x = torch.tensor([seq], dtype=torch.long, device=device)
             logits = model(x)[:, -1, :] / temperature
             probs = torch.softmax(logits, dim=-1)
             nxt = int(torch.multinomial(probs, num_samples=1))
@@ -55,11 +57,12 @@ def beam_search_decode(
     """Generate tokens using beam search."""
     model.eval()
     sequences = [(list(prefix_ids), 0.0)]  # (seq, score)
+    device = next(model.parameters()).device
     with torch.no_grad():
         for _ in range(max_len):
             all_candidates = []
             for seq, score in sequences:
-                x = torch.tensor([seq], dtype=torch.long)
+                x = torch.tensor([seq], dtype=torch.long, device=device)
                 logits = model(x)[:, -1, :]
                 log_probs = torch.log_softmax(logits, dim=-1)
                 topk_log_probs, topk_ids = torch.topk(log_probs, beam_size)
