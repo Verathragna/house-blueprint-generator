@@ -32,7 +32,13 @@ def sample_decode(
     max_len: int = 160,
     temperature: float = 1.0,
 ):
-    """Generate tokens using temperature sampling."""
+    """Generate tokens using temperature sampling.
+
+    Args:
+        temperature: Sampling temperature. Must be > 0.
+    """
+    if temperature <= 0:
+        raise ValueError("temperature must be positive")
     model.eval()
     seq = list(prefix_ids)
     device = next(model.parameters()).device

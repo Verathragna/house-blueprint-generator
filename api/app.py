@@ -12,6 +12,7 @@ from tokenizer.tokenizer import BlueprintTokenizer
 from models.layout_transformer import LayoutTransformer
 from models.decoding import decode
 from dataset.render_svg import render_layout_svg
+from evaluation.validators import enforce_min_separation
 from Generate.params import Params
 
 CHECKPOINT = os.path.join(REPO_ROOT, "checkpoints", "model_latest.pth")
@@ -82,6 +83,7 @@ def generate(
         beam_size=beam_size,
     )
     layout_json = _tokenizer.decode_layout_tokens(layout_tokens)
+    layout_json = enforce_min_separation(layout_json)
 
     out_dir = os.path.join(REPO_ROOT, "generated")
     os.makedirs(out_dir, exist_ok=True)

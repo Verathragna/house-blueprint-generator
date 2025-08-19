@@ -62,6 +62,36 @@ def check_overlaps(rooms: List[Dict]) -> List[str]:
     return issues
 
 
+def _too_close(r1: Dict, r2: Dict, min_sep: float) -> bool:
+    """Return True if two rooms are closer than ``min_sep``."""
+    ax1, ay1, ax2, ay2 = _room_bounds(r1)
+    bx1, by1, bx2, by2 = _room_bounds(r2)
+    return not (
+        ax2 + min_sep <= bx1
+        or bx2 + min_sep <= ax1
+        or ay2 + min_sep <= by1
+        or by2 + min_sep <= ay1
+    )
+
+
+def enforce_min_separation(layout: Dict, min_sep: float = 1.0) -> Dict:
+    """Shift rooms to ensure a minimum separation.
+
+    Rooms are moved to the right until they are at least ``min_sep`` units
+    away from previously placed rooms. This is a simple post-processing step
+    and does not guarantee a globally optimal arrangement, but it prevents
+    obvious overlaps in the generated layouts.
+    """
+    rooms = (layout.get("layout") or {}).get("rooms", [])
+    for i, room in enumerate(rooms):
+        pos = room.setdefault("position", {})
+        pos.setdefault("x", 0.0)
+        pos.setdefault("y", 0.0)
+        while any(_too_close(room, prev, min_sep) for prev in rooms[:i]):
+            pos["x"] += min_sep
+    return layout
+
+
 def validate_layout(layout: Dict, max_width: float = 40, max_length: float = 40) -> List[str]:
     """Validate layout geometry.
 
@@ -84,4 +114,5 @@ __all__ = [
     "check_bounds",
     "check_overlaps",
     "validate_layout",
+    "enforce_min_separation",
 ]
