@@ -1,8 +1,8 @@
 import os, sys, base64, threading, uuid
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.abspath(os.path.join(CURRENT_DIR, ".."))
@@ -12,38 +12,11 @@ from tokenizer.tokenizer import BlueprintTokenizer
 from models.layout_transformer import LayoutTransformer
 from models.decoding import decode
 from dataset.render_svg import render_layout_svg
+from Generate.params import Params
 
 CHECKPOINT = os.path.join(REPO_ROOT, "checkpoints", "model_latest.pth")
 DEVICE = os.environ.get("DEVICE", "cpu")
 
-class Bathrooms(BaseModel):
-    full: int = 2
-    half: int = 0
-
-class Garage(BaseModel):
-    attached: bool = True
-    carCount: Optional[int] = None
-    doorSizes: Optional[List[str]] = None
-
-class Params(BaseModel):
-    houseStyle: Optional[str] = None
-    dimensions: Optional[Dict[str, float]] = Field(default=None)
-    foundationType: Optional[str] = None
-    stories: Optional[int] = 1
-    bedrooms: int = 3
-    bathrooms: Bathrooms = Bathrooms()
-    bonusRoom: Optional[bool] = False
-    garage: Optional[Garage] = None
-    fireplace: Optional[bool] = False
-    ownerSuiteLocation: Optional[str] = None
-    masterBathOption: Optional[str] = None
-    ceilingHeight: Optional[float] = None
-    vaultedCeilings: Optional[Dict[str, bool]] = None
-    windowHeight: Optional[float] = None
-    doorHeight: Optional[float] = None
-    ada: Optional[bool] = None
-    adaFeatures: Optional[Dict[str, bool]] = None
-    attic: Optional[bool] = False
 
 class GenerateResponse(BaseModel):
     layout: Dict
@@ -99,7 +72,7 @@ def generate(
 ):
     model = _get_model()
 
-    prefix = _tokenizer.encode_params(params.dict())
+    prefix = _tokenizer.encode_params(params.model_dump())
     layout_tokens = decode(
         model,
         prefix,

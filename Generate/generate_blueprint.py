@@ -1,4 +1,5 @@
 import os, sys, json, argparse, torch
+from pydantic import ValidationError
 current_dir = os.path.dirname(os.path.abspath(__file__))
 repo_root = os.path.abspath(os.path.join(current_dir, ".."))
 sys.path.insert(0, repo_root)
@@ -7,6 +8,7 @@ from models.layout_transformer import LayoutTransformer
 from tokenizer.tokenizer import BlueprintTokenizer
 from models.decoding import decode
 from dataset.render_svg import render_layout_svg
+from Generate.params import Params
 
 CKPT = os.path.join(repo_root, "checkpoints", "model_latest.pth")
 
@@ -26,7 +28,13 @@ def main():
     ap.add_argument("--beam_size", type=int, default=5)
     args = ap.parse_args()
 
-    params = json.load(open(args.params_json, "r", encoding="utf-8"))
+    try:
+        raw = json.load(open(args.params_json, "r", encoding="utf-8"))
+        params = Params(**raw)
+    except (json.JSONDecodeError, ValidationError) as e:
+        print(f"Invalid parameters: {e}", file=sys.stderr)
+        sys.exit(1)
+
     tk = BlueprintTokenizer()
     model = LayoutTransformer(tk.get_vocab_size())
     if not os.path.exists(CKPT):
@@ -34,7 +42,7 @@ def main():
     model.load_state_dict(torch.load(CKPT, map_location=args.device))
     model.to(args.device)
 
-    prefix = tk.encode_params(params)
+    prefix = tk.encode_params(params.model_dump())
     layout_tokens = decode(
         model,
         prefix,

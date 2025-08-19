@@ -23,6 +23,14 @@ class BlueprintTokenizer:
             "STYLE_CRAFTSMAN", "STYLE_COLONIAL", "STYLE_MODERN",
             "W10","W12","W14","W16","W18","W20","L8","L10","L12","L14","L16","L20",
         ]
+        # Map common user-facing terms to internal tokens
+        self.term_to_token = {
+            "master bedroom": "OWNER_SUITE_MAIN",
+            "primary bedroom": "OWNER_SUITE_MAIN",
+            "owner's suite": "OWNER_SUITE_MAIN",
+            "master bath": "BATHROOM",
+            "half bath": "BATHROOM",
+        }
         # Discrete x/y position tokens on a 2ft grid from 0-40ft
         for n in range(0, 42, 2):
             tokens.append(f"X{n}")
@@ -103,7 +111,10 @@ class BlueprintTokenizer:
         rooms = (layout or {}).get("layout", {}).get("rooms", [])
         for r in rooms:
             t = (r.get("type") or "").lower()
-            if "bed" in t: ids.append(self.token_to_id["BEDROOM"])
+            mapped = self.term_to_token.get(t)
+            if mapped:
+                ids.append(self.token_to_id[mapped])
+            elif "bed" in t: ids.append(self.token_to_id["BEDROOM"])
             elif "bath" in t: ids.append(self.token_to_id["BATHROOM"])
             elif "kitchen" in t: ids.append(self.token_to_id["KITCHEN"])
             elif "living" in t: ids.append(self.token_to_id["LIVING"])
