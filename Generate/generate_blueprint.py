@@ -8,6 +8,7 @@ from models.layout_transformer import LayoutTransformer
 from tokenizer.tokenizer import BlueprintTokenizer
 from models.decoding import decode
 from dataset.render_svg import render_layout_svg
+from evaluation.validators import enforce_min_separation
 from Generate.params import Params
 
 CKPT = os.path.join(repo_root, "checkpoints", "model_latest.pth")
@@ -52,6 +53,7 @@ def main():
         beam_size=args.beam_size,
     )
     layout_json = tk.decode_layout_tokens(layout_tokens)
+    layout_json = enforce_min_separation(layout_json)
 
     json_path = f"{args.out_prefix}.json"
     svg_path = f"{args.out_prefix}.svg"
