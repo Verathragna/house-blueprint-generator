@@ -3,6 +3,8 @@ import json
 import random
 import argparse
 
+from tokenizer.tokenizer import BlueprintTokenizer
+
 try:
     import numpy as np
 except Exception:  # NumPy not available
@@ -29,6 +31,7 @@ def main(seed: int = 42) -> None:
     os.makedirs(out_dir, exist_ok=True)
 
     pairs = []
+    tk = BlueprintTokenizer()
     files = sorted(
         [f for f in os.listdir(in_dir) if f.startswith("input_") and f.endswith(".json")]
     )
@@ -41,7 +44,8 @@ def main(seed: int = 42) -> None:
             # ensure all rooms contain coordinate fields
             for room in layout.get("layout", {}).get("rooms", []):
                 room.setdefault("position", {"x": 0, "y": 0})
-            pairs.append({"params": inp, "layout": layout})
+            x_ids, y_ids = tk.build_training_pair(inp, layout)
+            pairs.append({"params": inp, "layout": layout, "x": x_ids, "y": y_ids})
 
     random.shuffle(pairs)
     cut = int(0.9 * len(pairs)) if pairs else 0
