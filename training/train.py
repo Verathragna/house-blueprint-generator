@@ -24,6 +24,12 @@ class PairDataset(Dataset):
 
     def __getitem__(self, idx):
         row = self.rows[idx]
+        if "x" in row and "y" in row:
+            return (
+                torch.tensor(row["x"], dtype=torch.long),
+                torch.tensor(row["y"], dtype=torch.long),
+            )
+
         # ensure coordinate fields are present so position tokens can be learned
         for room in row.get("layout", {}).get("layout", {}).get("rooms", []):
             room.setdefault("position", {"x": 0, "y": 0})
