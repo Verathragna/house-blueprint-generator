@@ -4,6 +4,7 @@ from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconn
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from fastapi.exceptions import RequestValidationError
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from prometheus_client import (
     Counter,
@@ -15,6 +16,7 @@ from prometheus_client import (
 
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.abspath(os.path.join(CURRENT_DIR, ".."))
+WEB_DIR = os.path.join(REPO_ROOT, "interface", "web")
 sys.path.insert(0, REPO_ROOT)
 
 from tokenizer.tokenizer import BlueprintTokenizer
@@ -391,3 +393,6 @@ async def job_updates(websocket: WebSocket, job_id: str):
         logger.info("WebSocket disconnected for job %s", job_id)
     finally:
         await websocket.close()
+
+
+app.mount("/", StaticFiles(directory=WEB_DIR, html=True), name="web")

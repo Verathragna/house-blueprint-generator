@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>House Blueprint Generator</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 2rem; }
+    fieldset { margin-bottom: 1rem; }
+    #svg-container img { max-width: 100%; border: 1px solid #ccc; }
+    #logs { list-style-type: none; padding-left: 0; }
+    #logs li { margin-bottom: 0.25rem; }
+  </style>
+</head>
+<body>
+  <h1>House Blueprint Generator</h1>
+  <form id="generate-form">
+    <fieldset>
+      <legend>Dimensions</legend>
+      <label>Width: <input type="number" step="0.1" id="width" required></label>
+      <label>Depth: <input type="number" step="0.1" id="depth" required></label>
+    </fieldset>
+    <fieldset>
+      <legend>Rooms</legend>
+      <label>Bedrooms: <input type="number" id="bedrooms" value="3"></label>
+      <label>Full Bathrooms: <input type="number" id="bath_full" value="2"></label>
+      <label>Half Bathrooms: <input type="number" id="bath_half" value="0"></label>
+    </fieldset>
+    <fieldset>
+      <legend>Room Adjacency (JSON)</legend>
+      <textarea id="adjacency" rows="4" placeholder='{"kitchen": ["living_room"]}'></textarea>
+    </fieldset>
+    <button type="submit">Generate</button>
+  </form>
+
+  <section id="progress" style="display:none;">
+    <h2>Progress</h2>
+    <ul id="logs"></ul>
+  </section>
+
+  <section id="result" style="display:none;">
+    <h2>Generated Layout</h2>
+    <div id="svg-container"></div>
+    <p>
+      <a id="download-json" href="#" download="layout.json">Download JSON</a>
+      |
+      <a id="download-svg" href="#" download="layout.svg">Download SVG</a>
+    </p>
+  </section>
+
+  <script src="app.js"></script>
+</body>
+</html>
