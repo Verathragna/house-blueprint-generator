@@ -1,9 +1,10 @@
 import os, sys, base64, threading, uuid, time, logging
-from typing import Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
-from pydantic import BaseModel
+from fastapi.exceptions import RequestValidationError
+from pydantic import BaseModel, Field
 from prometheus_client import (
     Counter,
     Histogram,
@@ -64,19 +65,32 @@ ERROR_COUNT = Counter(
 )
 
 
+class Metadata(BaseModel):
+    processing_time: float
+
+
+class GenerateRequest(BaseModel):
+    params: Params
+    strategy: str = Field(default="greedy", pattern="^(greedy|beam|sample)$")
+    temperature: float = Field(default=1.0, ge=0.0)
+    beam_size: int = Field(default=5, ge=1)
+
+
 class GenerateResponse(BaseModel):
     layout: Dict
     svg_data_url: str
-    saved_svg_path: Optional[str] = None
-    saved_json_path: Optional[str] = None
-    svg_filename: Optional[str] = None
-    json_filename: Optional[str] = None
-    generation_time: float
+    saved_svg_path: str
+    saved_json_path: str
+    svg_filename: str
+    json_filename: str
+    metadata: Metadata
 
 
 class ErrorResponse(BaseModel):
     code: str
     message: str
+    details: Optional[Any] = None
+    metadata: Metadata
 
 app = FastAPI(title="Blueprint Generator API", version="1.0.0")
 app.add_middleware(
@@ -91,6 +105,7 @@ app.add_middleware(
 @app.middleware("http")
 async def metrics_middleware(request: Request, call_next):
     start_time = time.perf_counter()
+    request.state.start_time = start_time
     try:
         response = await call_next(request)
         status_code = response.status_code
@@ -156,15 +171,43 @@ async def http_exception_handler(request: Request, exc: HTTPException):
         content = detail
     else:
         content = {"code": "error", "message": str(detail)}
+    processing_time = time.perf_counter() - getattr(
+        request.state, "start_time", time.perf_counter()
+    )
+    content["metadata"] = {"processing_time": processing_time}
     return JSONResponse(status_code=exc.status_code, content=content)
 
 
 @app.exception_handler(Exception)
 async def general_exception_handler(request: Request, exc: Exception):
     logger.exception("Unhandled exception: %s", exc)
+    processing_time = time.perf_counter() - getattr(
+        request.state, "start_time", time.perf_counter()
+    )
     return JSONResponse(
         status_code=500,
-        content={"code": "internal_error", "message": "Internal server error"},
+        content={
+            "code": "internal_error",
+            "message": "Internal server error",
+            "metadata": {"processing_time": processing_time},
+        },
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    logger.warning("Validation error: %s", exc)
+    processing_time = time.perf_counter() - getattr(
+        request.state, "start_time", time.perf_counter()
+    )
+    return JSONResponse(
+        status_code=422,
+        content={
+            "code": "validation_error",
+            "message": "Invalid request",
+            "details": exc.errors(),
+            "metadata": {"processing_time": processing_time},
+        },
     )
 
 
@@ -176,15 +219,18 @@ def metrics():
 @app.post(
     "/generate",
     response_model=GenerateResponse,
-    responses={429: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+    responses={
+        429: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+        422: {"model": ErrorResponse},
+    },
 )
-def generate(
-    request: Request,
-    params: Params,
-    strategy: str = "greedy",
-    temperature: float = 1.0,
-    beam_size: int = 5,
-):
+def generate(request: Request, req: GenerateRequest):
+    params = req.params
+    strategy = req.strategy
+    temperature = req.temperature
+    beam_size = req.beam_size
+
     # rate limiting
     ip = request.client.host if request.client else "anonymous"
     now = time.time()
@@ -199,8 +245,6 @@ def generate(
     _request_counts[ip] = (window_start, count + 1)
 
     model = _get_model()
-
-    start_t = time.perf_counter()
 
     prefix = _tokenizer.encode_params(params.model_dump())
     layout_tokens = decode(
@@ -227,11 +271,11 @@ def generate(
         pyjson.dump(layout_json, f, indent=2)
     render_layout_svg(layout_json, svg_path)
 
-    generation_time = time.perf_counter() - start_t
-
-    logger.info(
-        "Generated blueprint %s in %.3fs", base, generation_time
+    processing_time = time.perf_counter() - getattr(
+        request.state, "start_time", time.perf_counter()
     )
+
+    logger.info("Generated blueprint %s in %.3fs", base, processing_time)
 
     return GenerateResponse(
         layout=layout_json,
@@ -240,5 +284,5 @@ def generate(
         saved_json_path=json_path,
         svg_filename=svg_filename,
         json_filename=json_filename,
-        generation_time=generation_time,
+        metadata=Metadata(processing_time=processing_time),
     )
