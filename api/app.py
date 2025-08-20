@@ -1,6 +1,6 @@
-import os, sys, base64, threading, uuid, time, logging
-from typing import Any, Dict, Optional, Tuple
-from fastapi import FastAPI, HTTPException, Request
+import os, sys, base64, threading, uuid, time, logging, queue, asyncio
+from typing import Any, Dict, Optional, Tuple, List
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from fastapi.exceptions import RequestValidationError
@@ -92,6 +92,17 @@ class ErrorResponse(BaseModel):
     details: Optional[Any] = None
     metadata: Metadata
 
+
+class JobResponse(BaseModel):
+    job_id: str
+
+
+class JobStatus(BaseModel):
+    status: str
+    logs: List[str]
+    result: Optional[GenerateResponse] = None
+    error: Optional[str] = None
+
 app = FastAPI(title="Blueprint Generator API", version="1.0.0")
 app.add_middleware(
     CORSMiddleware,
@@ -137,6 +148,82 @@ _lock = threading.Lock()
 RATE_LIMIT = int(os.environ.get("RATE_LIMIT", "60"))
 _WINDOW_SECONDS = 60
 _request_counts: Dict[str, Tuple[float, int]] = {}
+
+# Background job queue and status store
+_task_queue: "queue.Queue[Tuple[str, Params, str, float, int]]" = queue.Queue()
+_jobs: Dict[str, Dict[str, Any]] = {}
+
+
+def _worker():
+    while True:
+        job_id, params, strategy, temperature, beam_size = _task_queue.get()
+        job = _jobs[job_id]
+        try:
+            job["status"] = "in_progress"
+            job["start_time"] = time.perf_counter()
+            job["logs"].append("Job started")
+            job["event"].set()
+
+            model = _get_model()
+            job["logs"].append("Model loaded")
+            job["event"].set()
+
+            prefix = _tokenizer.encode_params(params.model_dump())
+            job["logs"].append("Decoding layout")
+            job["event"].set()
+            layout_tokens = decode(
+                model,
+                prefix,
+                max_len=160,
+                strategy=strategy,
+                temperature=temperature,
+                beam_size=beam_size,
+            )
+            layout_json = _tokenizer.decode_layout_tokens(layout_tokens)
+            layout_json = enforce_min_separation(layout_json)
+            job["logs"].append("Rendering layout")
+            job["event"].set()
+
+            out_dir = os.path.join(REPO_ROOT, "generated")
+            os.makedirs(out_dir, exist_ok=True)
+            base = uuid.uuid4().hex
+            json_filename = f"{base}.json"
+            svg_filename = f"{base}.svg"
+            json_path = os.path.join(out_dir, json_filename)
+            svg_path = os.path.join(out_dir, svg_filename)
+
+            with open(json_path, "w", encoding="utf-8") as f:
+                import json as pyjson
+                pyjson.dump(layout_json, f, indent=2)
+            render_layout_svg(layout_json, svg_path)
+
+            processing_time = time.perf_counter() - job["start_time"]
+            result = GenerateResponse(
+                layout=layout_json,
+                svg_data_url=svg_to_data_url(svg_path),
+                saved_svg_path=svg_path,
+                saved_json_path=json_path,
+                svg_filename=svg_filename,
+                json_filename=json_filename,
+                metadata=Metadata(processing_time=processing_time),
+            )
+
+            job["status"] = "completed"
+            job["result"] = result
+            job["logs"].append("Job completed")
+            job["event"].set()
+        except Exception as exc:
+            logger.exception("Job %s failed: %s", job_id, exc)
+            job["status"] = "failed"
+            job["error"] = str(exc)
+            job["logs"].append(f"Error: {exc}")
+            job["event"].set()
+        finally:
+            _task_queue.task_done()
+
+
+_worker_thread = threading.Thread(target=_worker, daemon=True)
+_worker_thread.start()
 
 def _get_model():
     global _model
@@ -218,7 +305,7 @@ def metrics():
 
 @app.post(
     "/generate",
-    response_model=GenerateResponse,
+    response_model=JobResponse,
     responses={
         429: {"model": ErrorResponse},
         500: {"model": ErrorResponse},
@@ -244,45 +331,63 @@ def generate(request: Request, req: GenerateRequest):
         )
     _request_counts[ip] = (window_start, count + 1)
 
-    model = _get_model()
+    job_id = uuid.uuid4().hex
+    _jobs[job_id] = {
+        "status": "queued",
+        "logs": ["Job queued"],
+        "result": None,
+        "error": None,
+        "event": threading.Event(),
+    }
+    _task_queue.put((job_id, params, strategy, temperature, beam_size))
+    _jobs[job_id]["event"].set()
+    return JobResponse(job_id=job_id)
 
-    prefix = _tokenizer.encode_params(params.model_dump())
-    layout_tokens = decode(
-        model,
-        prefix,
-        max_len=160,
-        strategy=strategy,
-        temperature=temperature,
-        beam_size=beam_size,
-    )
-    layout_json = _tokenizer.decode_layout_tokens(layout_tokens)
-    layout_json = enforce_min_separation(layout_json)
 
-    out_dir = os.path.join(REPO_ROOT, "generated")
-    os.makedirs(out_dir, exist_ok=True)
-    base = uuid.uuid4().hex
-    json_filename = f"{base}.json"
-    svg_filename = f"{base}.svg"
-    json_path = os.path.join(out_dir, json_filename)
-    svg_path = os.path.join(out_dir, svg_filename)
+@app.get(
+    "/status/{job_id}",
+    response_model=JobStatus,
+    responses={404: {"model": ErrorResponse}},
+)
+def job_status(job_id: str):
+    job = _jobs.get(job_id)
+    if not job:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "not_found", "message": "Job not found"},
+        )
+    data: Dict[str, Any] = {"status": job["status"], "logs": job["logs"]}
+    if job["status"] == "completed":
+        data["result"] = job["result"]
+    if job["status"] == "failed":
+        data["error"] = job["error"]
+    return JobStatus(**data)
 
-    with open(json_path, "w", encoding="utf-8") as f:
-        import json as pyjson
-        pyjson.dump(layout_json, f, indent=2)
-    render_layout_svg(layout_json, svg_path)
 
-    processing_time = time.perf_counter() - getattr(
-        request.state, "start_time", time.perf_counter()
-    )
-
-    logger.info("Generated blueprint %s in %.3fs", base, processing_time)
-
-    return GenerateResponse(
-        layout=layout_json,
-        svg_data_url=svg_to_data_url(svg_path),
-        saved_svg_path=svg_path,
-        saved_json_path=json_path,
-        svg_filename=svg_filename,
-        json_filename=json_filename,
-        metadata=Metadata(processing_time=processing_time),
-    )
+@app.websocket("/ws/{job_id}")
+async def job_updates(websocket: WebSocket, job_id: str):
+    job = _jobs.get(job_id)
+    if job is None:
+        await websocket.close(code=1008)
+        return
+    await websocket.accept()
+    last = 0
+    try:
+        while True:
+            while last < len(job["logs"]):
+                await websocket.send_json({"log": job["logs"][last]})
+                last += 1
+            if job["status"] == "completed":
+                await websocket.send_json(
+                    {"status": "completed", "result": job["result"].model_dump()}
+                )
+                break
+            if job["status"] == "failed":
+                await websocket.send_json({"status": "failed", "error": job["error"]})
+                break
+            await asyncio.get_event_loop().run_in_executor(None, job["event"].wait)
+            job["event"].clear()
+    except WebSocketDisconnect:
+        logger.info("WebSocket disconnected for job %s", job_id)
+    finally:
+        await websocket.close()
