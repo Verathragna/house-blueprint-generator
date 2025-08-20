@@ -1,0 +1,36 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer utilities {
+  /* Base animation styles */
+  .animate-card {
+    opacity: 0;
+    transform: translateY(10px);
+    animation: card-enter 0.5s ease-out forwards;
+  }
+
+  /* Animation keyframes */
+  @keyframes card-enter {
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  /* Respect user's motion preferences */
+  @media (prefers-reduced-motion: reduce) {
+    .animate-card {
+      animation: none;
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+}
+
+/* Animation delay utilities */
+.animation-delay-100 { animation-delay: 100ms; }
+.animation-delay-200 { animation-delay: 200ms; }
+.animation-delay-300 { animation-delay: 300ms; }
+.animation-delay-400 { animation-delay: 400ms; }
+.animation-delay-500 { animation-delay: 500ms; }
