@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
-import { Save, Download, RefreshCw, Loader2 } from 'lucide-react';
+import { Save, Download, Loader2 } from 'lucide-react';
+
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
 /**
  * @typedef {Object} DesignFormData
@@ -77,48 +79,69 @@ const DesignPage = () => {
   });
 
   /**
-   * Simulates blueprint generation based on form data.
-   * In a production environment, this would call an actual blueprint generation service.
-   * 
+   * Generate a blueprint by calling the backend API and polling for completion.
+   *
    * @param {DesignFormData} data - Form data used to generate the blueprint
    * @returns {Promise<BlueprintData>} Generated blueprint data
    */
   const generateBlueprint = async (data: DesignFormData): Promise<BlueprintData> => {
-    // Simulate API call delay
-    await new Promise(resolve => setTimeout(resolve, 3000));
-
-    // PLACE API CALL HERE:
-    // Replace this mock implementation with your actual API call
-    // Example:
-    // try {
-    //   const response = await fetch('YOUR_API_ENDPOINT', {
-    //     method: 'POST',
-    //     headers: {
-    //       'Content-Type': 'application/json',
-    //     },
-    //     body: JSON.stringify(data)
-    //   });
-    //   
-    //   if (!response.ok) {
-    //     throw new Error('Blueprint generation failed');
-    //   }
-    //   
-    //   return await response.json();
-    // } catch (error) {
-    //   console.error('Error generating blueprint:', error);
-    //   throw error;
-    // }
-
-    // Mock response - replace with actual API response
-    return {
-      floorPlan: 'https://images.unsplash.com/photo-1574706472779-9b0f28c9a240?ixlib=rb-1.2.1&auto=format&fit=crop&w=1950&q=80',
-      elevation: 'https://images.unsplash.com/photo-1574706472779-9b0f28c9a240?ixlib=rb-1.2.1&auto=format&fit=crop&w=1950&q=80',
-      dimensions: {
-        width: parseInt(data.lotWidth),
-        length: parseInt(data.lotLength),
-        totalArea: parseInt(data.squareFootage)
+    const payload = {
+      params: {
+        houseStyle: data.style,
+        dimensions: {
+          width: Number(data.lotWidth),
+          depth: Number(data.lotLength)
+        },
+        stories: Number(data.floors),
+        bedrooms: Number(data.bedrooms),
+        bathrooms: { full: Number(data.bathrooms), half: 0 }
       }
     };
+
+    const resp = await fetch(`${API_BASE_URL}/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    if (!resp.ok) {
+      throw new Error('Blueprint generation failed');
+    }
+
+    const { job_id }: { job_id: string } = await resp.json();
+
+    // Poll job status until completion
+    while (true) {
+      const statusResp = await fetch(`${API_BASE_URL}/status/${job_id}`);
+      if (!statusResp.ok) {
+        throw new Error('Failed to get job status');
+      }
+      const statusData: {
+        status: string;
+        result?: { svg_data_url: string };
+        error?: string;
+      } = await statusResp.json();
+
+      if (statusData.status === 'completed' && statusData.result) {
+        const imageUrl = statusData.result.svg_data_url;
+        return {
+          floorPlan: imageUrl,
+          elevation: imageUrl,
+          dimensions: {
+            width: parseInt(data.lotWidth),
+            length: parseInt(data.lotLength),
+            totalArea: parseInt(data.squareFootage)
+          }
+        };
+      }
+
+      if (statusData.status === 'failed') {
+        throw new Error(statusData.error || 'Blueprint generation failed');
+      }
+
+      // wait a bit before polling again
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
   };
 
   const architecturalStyles = [

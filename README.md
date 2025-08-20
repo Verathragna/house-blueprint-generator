@@ -49,6 +49,20 @@ DEVICE=cuda uvicorn api.app:app --host 0.0.0.0 --port 8000 --reload
 # POST to /generate with params JSON; response contains layout JSON and data-URL SVG
 ```
 
+### Web Interface
+
+A React front end is available for interactive blueprint generation. Start the API
+server, then in a separate terminal run:
+
+```bash
+cd interface/web
+npm install
+VITE_API_BASE_URL=http://localhost:8000 npm run dev
+```
+
+Open `http://localhost:5173/design` in a browser to submit parameters and preview
+the resulting blueprint.
+
 ### Simple CLI
 
 For non-technical users, a basic command line interface is available:

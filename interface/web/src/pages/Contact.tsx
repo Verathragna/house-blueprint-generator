@@ -25,7 +25,7 @@ import { Mail, Phone, MapPin, Clock } from 'lucide-react';
 
 const Contact = () => {
   // Form state management using controlled components
-  const [formData, setFormData] = useState({
+  const [formData] = useState({
     name: '',
     email: '',
     phone: '',
@@ -41,17 +41,6 @@ const Contact = () => {
     e.preventDefault();
     // TODO: Implement form submission to backend
     console.log('Form submitted:', formData);
-  };
-
-  /**
-   * Updates form state when input values change
-   * @param {React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>} e - Input change event
-   */
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
-    setFormData({
-      ...formData,
-      [e.target.name]: e.target.value
-    });
   };
 
   // Contact information displayed in the sidebar
