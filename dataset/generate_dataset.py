@@ -53,6 +53,14 @@ def random_layout(i, rng=random):
     return {"layout": {"rooms": rooms}}
 
 
+def validate_layout(layout):
+    """Ensure every room includes ``position`` with ``x`` and ``y``."""
+    for idx, room in enumerate(layout.get("layout", {}).get("rooms", [])):
+        pos = room.get("position")
+        if not isinstance(pos, dict) or "x" not in pos or "y" not in pos:
+            raise ValueError(f"Room {idx} missing coordinate fields")
+
+
 def ingest_external_dataset(external_dir, out_dir=OUT_DIR, start_index=0, augment=False):
     """Ingest external floor-plan JSON files and normalize to internal schema."""
     idx = start_index
@@ -64,12 +72,17 @@ def ingest_external_dataset(external_dir, out_dir=OUT_DIR, start_index=0, augmen
 
         rooms = []
         for room in data.get("rooms", []):
-            if "x" not in room or "y" not in room:
+            if "position" in room:
+                pos = room["position"]
+                x, y = pos.get("x"), pos.get("y")
+            else:
+                x, y = room.get("x"), room.get("y")
+            if x is None or y is None:
                 raise ValueError(f"Room missing coordinates in {fname}")
             size = {"width": room.get("width", 10), "length": room.get("length", 10)}
             rooms.append({
                 "type": room.get("type", "Room"),
-                "position": {"x": room["x"], "y": room["y"]},
+                "position": {"x": x, "y": y},
                 "size": size,
             })
 
@@ -86,6 +99,7 @@ def ingest_external_dataset(external_dir, out_dir=OUT_DIR, start_index=0, augmen
 
 
 def _write_sample(params, layout, out_dir, idx):
+    validate_layout(layout)
     ip = os.path.join(out_dir, f"input_{idx:05d}.json")
     lp = os.path.join(out_dir, f"layout_{idx:05d}.json")
     sp = os.path.join(out_dir, f"layout_{idx:05d}.svg")

@@ -45,3 +45,27 @@ def test_external_ingestion(tmp_path, monkeypatch):
     data = json.loads(layout_file.read_text())
     room = data["layout"]["rooms"][0]
     assert room["position"] == {"x": 1, "y": 2}
+
+
+def test_external_ingestion_with_position(tmp_path, monkeypatch):
+    from dataset import generate_dataset as gd
+
+    monkeypatch.setattr(gd, "render_layout_svg", dummy_render)
+
+    external_dir = tmp_path / "external"
+    external_dir.mkdir()
+    sample = {
+        "rooms": [
+            {"type": "Kitchen", "position": {"x": 5, "y": 6}, "width": 12, "length": 14}
+        ],
+        "params": {"houseStyle": "External", "squareFeet": 900},
+    }
+    (external_dir / "plan.json").write_text(json.dumps(sample))
+
+    out_dir = tmp_path / "synthetic"
+    gd.main(n=0, external_dir=str(external_dir), out_dir=str(out_dir), seed=0)
+
+    layout_file = next(out_dir.glob("layout_*.json"))
+    data = json.loads(layout_file.read_text())
+    room = data["layout"]["rooms"][0]
+    assert room["position"] == {"x": 5, "y": 6}
