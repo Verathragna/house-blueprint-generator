@@ -50,7 +50,7 @@ def list_and_cleanup(keep_last_n=3):
     if len(files) > keep_last_n:
         for f in files[:-keep_last_n]:
             os.remove(os.path.join(CHECKPOINT_DIR, f))
-            print(f"🗑️ Deleted {f}")
+            print(f"Deleted {f}")
 
 
 def ensure_dataset(train_path: str, val_path: str) -> bool:
@@ -58,12 +58,12 @@ def ensure_dataset(train_path: str, val_path: str) -> bool:
     if os.path.exists(train_path) and os.path.exists(val_path):
         return True
 
-    print("⚠️ No training data found. Generating synthetic dataset...")
+    print("No training data found. Generating synthetic dataset...")
     try:
         subprocess.run([sys.executable, "-m", "dataset.generate_dataset"], check=True, cwd=repo_root)
         subprocess.run([sys.executable, "-m", "scripts.build_jsonl"], check=True, cwd=repo_root)
     except Exception as e:  # pragma: no cover - best effort generation
-        print(f"❌ Failed to build dataset: {e}")
+        print(f"Failed to build dataset: {e}")
         return False
     return os.path.exists(train_path) and os.path.exists(val_path)
 
@@ -83,14 +83,14 @@ def train(
     val_path = os.path.join(repo_root, "dataset", "val.jsonl")
 
     if not ensure_dataset(train_path, val_path):
-        print("❌ Dataset generation failed. Aborting training.")
+        print("Dataset generation failed. Aborting training.")
         return
 
     train_set = PairDataset(train_path, tk)
     val_set = PairDataset(val_path, tk)
 
     if len(train_set) == 0:
-        print("❌ Dataset generation produced no data. Aborting training.")
+        print("Dataset generation produced no data. Aborting training.")
         return
 
     train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True, collate_fn=collate_fn)
@@ -108,7 +108,7 @@ def train(
 
     start_epoch = 0
     if resume and os.path.exists(resume):
-        print(f"🔁 Resuming from checkpoint {resume}...")
+        print(f"Resuming from checkpoint {resume}...")
         checkpoint = torch.load(resume, map_location=device)
         model.load_state_dict(checkpoint.get("model", checkpoint))
         model.to(device)
@@ -141,7 +141,7 @@ def train(
         for ep in range(start_epoch, start_epoch + epochs):
             tr = run_epoch(train_loader, True)
             va = run_epoch(val_loader, False) if len(val_set) > 0 else float('nan')
-            print(f"✅ Epoch {ep}: train={tr:.4f}  val={va:.4f}")
+            print(f"Epoch {ep}: train={tr:.4f}  val={va:.4f}")
             log.write(f"epoch {ep}, train {tr:.4f}, val {va:.4f}\n")
             log.flush()
             list_and_cleanup(keep_last_n=3)

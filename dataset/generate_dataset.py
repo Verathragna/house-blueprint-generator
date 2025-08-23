@@ -127,7 +127,7 @@ def main(n=50, out_dir=OUT_DIR, external_dir=None, seed=None, augment=False):
     if external_dir:
         idx += ingest_external_dataset(external_dir, out_dir, start_index=idx, augment=augment)
 
-    print(f"✅ Wrote {idx} pairs to {out_dir}")
+    print(f"Wrote {idx} pairs to {out_dir}")
 
 
 if __name__ == "__main__":

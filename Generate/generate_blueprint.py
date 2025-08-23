@@ -66,7 +66,7 @@ def main():
     svg_path = f"{args.out_prefix}.svg"
     json.dump(layout_json, open(json_path, "w", encoding="utf-8"), indent=2)
     render_layout_svg(layout_json, svg_path)
-    print(f"✅ Wrote {json_path} and {svg_path}")
+    print(f"Wrote {json_path} and {svg_path}")
 
 if __name__ == "__main__":
     main()
