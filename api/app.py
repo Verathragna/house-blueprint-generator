@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 from prometheus_client import (
     Counter,
     Histogram,
@@ -371,7 +371,14 @@ def generate(
     req: GenerateRequest,
     api_key: str = Depends(_get_api_key),
 ):
-    params = req.params
+    try:
+        params = Params.model_validate(req.params.model_dump())
+    except ValidationError as e:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "validation_error", "message": "Invalid parameters", "details": e.errors()},
+        )
+
     strategy = req.strategy
     temperature = req.temperature
     beam_size = req.beam_size

@@ -1,5 +1,5 @@
 from typing import Dict, List, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, RootModel, field_validator
 
 
 class Bathrooms(BaseModel):
@@ -16,6 +16,30 @@ class Garage(BaseModel):
 class Dimensions(BaseModel):
     width: float = Field(gt=0)
     depth: float = Field(gt=0)
+
+
+class Adjacency(RootModel[Dict[str, List[str]]]):
+    @field_validator("root")
+    @classmethod
+    def _check_lists(cls, value: Dict[str, List[str]]) -> Dict[str, List[str]]:
+        for room, adjacent in value.items():
+            if not isinstance(adjacent, list) or not all(
+                isinstance(a, str) for a in adjacent
+            ):
+                raise ValueError("Adjacency mapping must be a list of strings")
+            if len(adjacent) == 0:
+                raise ValueError(f"Adjacency list for '{room}' cannot be empty")
+        return value
+
+
+class Constraints(RootModel[Dict[str, float]]):
+    @field_validator("root")
+    @classmethod
+    def _positive(cls, value: Dict[str, float]) -> Dict[str, float]:
+        for k, v in value.items():
+            if v <= 0:
+                raise ValueError("Constraint values must be positive")
+        return value
 
 
 class Params(BaseModel):
@@ -37,5 +61,6 @@ class Params(BaseModel):
     ada: Optional[bool] = None
     adaFeatures: Optional[Dict[str, bool]] = None
     attic: Optional[bool] = False
-    roomAdjacency: Optional[Dict[str, List[str]]] = None
-    constraints: Optional[Dict[str, float]] = None
+    adjacency: Optional[Adjacency] = None
+    constraints: Optional[Constraints] = None
+

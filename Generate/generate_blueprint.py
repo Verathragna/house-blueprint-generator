@@ -31,7 +31,7 @@ def main():
 
     try:
         raw = json.load(open(args.params_json, "r", encoding="utf-8"))
-        params = Params(**raw)
+        params = Params.model_validate(raw)
     except (json.JSONDecodeError, ValidationError) as e:
         print(f"Invalid parameters: {e}", file=sys.stderr)
         sys.exit(1)
