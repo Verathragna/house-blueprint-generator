@@ -1,3 +1,11 @@
+"""Decoding utilities for blueprint token sequences.
+
+This module centralises different strategies used during autoregressive
+generation.  In addition to simple greedy decoding, it supports
+temperature-based sampling and beam search.  The helper :func:`decode`
+provides a unified entry point selecting between the strategies.
+"""
+
 import torch
 from tokenizer.tokenizer import SEP_ID, EOS_ID
 
@@ -60,7 +68,13 @@ def beam_search_decode(
     max_len: int = 160,
     beam_size: int = 5,
 ):
-    """Generate tokens using beam search."""
+    """Generate tokens using beam search.
+
+    Args:
+        beam_size: Number of beams to keep during search. Must be >= 1.
+    """
+    if beam_size < 1:
+        raise ValueError("beam_size must be at least 1")
     model.eval()
     sequences = [(list(prefix_ids), 0.0)]  # (seq, score)
     device = next(model.parameters()).device
@@ -90,7 +104,13 @@ def decode(
     temperature: float = 1.0,
     beam_size: int = 5,
 ):
-    """Unified decoding interface."""
+    """Unified decoding interface.
+
+    Args:
+        strategy: One of ``"greedy"``, ``"sample"`` or ``"beam"``.
+        temperature: Temperature for sampling when ``strategy=='sample'``.
+        beam_size: Beam width used when ``strategy=='beam'``.
+    """
     if strategy == "greedy":
         return greedy_decode(model, prefix_ids, max_len)
     if strategy == "sample":

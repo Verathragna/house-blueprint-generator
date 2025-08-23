@@ -95,6 +95,7 @@ class GenerateRequest(BaseModel):
     strategy: str = Field(default="greedy", pattern="^(greedy|beam|sample)$")
     temperature: float = Field(default=1.0, ge=0.0)
     beam_size: int = Field(default=5, ge=1)
+    min_separation: float = Field(default=1.0, ge=0.0)
 
 
 class GenerateResponse(BaseModel):
@@ -203,13 +204,13 @@ _WINDOW_SECONDS = 60
 _request_counts: Dict[str, Tuple[float, int]] = {}
 
 # Background job queue and status store
-_task_queue: "queue.Queue[Tuple[str, Params, str, float, int]]" = queue.Queue()
+_task_queue: "queue.Queue[Tuple[str, Params, str, float, int, float]]" = queue.Queue()
 _jobs: Dict[str, Dict[str, Any]] = {}
 
 
 def _worker():
     while True:
-        job_id, params, strategy, temperature, beam_size = _task_queue.get()
+        job_id, params, strategy, temperature, beam_size, min_sep = _task_queue.get()
         job = _jobs[job_id]
         try:
             job["status"] = "in_progress"
@@ -233,7 +234,8 @@ def _worker():
                 beam_size=beam_size,
             )
             layout_json = _tokenizer.decode_layout_tokens(layout_tokens)
-            layout_json = enforce_min_separation(layout_json)
+            if min_sep > 0:
+                layout_json = enforce_min_separation(layout_json, min_sep)
             job["logs"].append("Rendering layout")
             job["event"].set()
 
@@ -382,6 +384,7 @@ def generate(
     strategy = req.strategy
     temperature = req.temperature
     beam_size = req.beam_size
+    min_sep = req.min_separation
 
     # rate limiting per API key
     now = time.time()
@@ -403,7 +406,7 @@ def generate(
         "error": None,
         "event": threading.Event(),
     }
-    _task_queue.put((job_id, params, strategy, temperature, beam_size))
+    _task_queue.put((job_id, params, strategy, temperature, beam_size, min_sep))
     _jobs[job_id]["event"].set()
     return JobResponse(job_id=job_id)
 

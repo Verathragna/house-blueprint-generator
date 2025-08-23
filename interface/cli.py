@@ -20,13 +20,38 @@ def main():
     parser.add_argument(
         "--outdir", default="generated_cli", help="Directory to save outputs"
     )
+    parser.add_argument(
+        "--strategy",
+        default="greedy",
+        choices=["greedy", "sample", "beam"],
+        help="Decoding strategy",
+    )
+    parser.add_argument(
+        "--temperature", type=float, default=1.0, help="Sampling temperature"
+    )
+    parser.add_argument(
+        "--beam_size", type=int, default=5, help="Beam size for beam search"
+    )
+    parser.add_argument(
+        "--min_separation",
+        type=float,
+        default=1.0,
+        help="Minimum room separation; 0 disables",
+    )
     args = parser.parse_args()
 
     with open(args.params, "r", encoding="utf-8") as f:
         params = json.load(f)
 
+    payload = {
+        "params": params,
+        "strategy": args.strategy,
+        "temperature": args.temperature,
+        "beam_size": args.beam_size,
+        "min_separation": args.min_separation,
+    }
     try:
-        resp = requests.post(args.api, json=params)
+        resp = requests.post(args.api, json=payload)
         data = resp.json()
     except Exception as e:
         print(f"Failed to contact API: {e}")

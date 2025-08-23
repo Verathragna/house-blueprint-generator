@@ -27,6 +27,12 @@ def main():
     )
     ap.add_argument("--temperature", type=float, default=1.0)
     ap.add_argument("--beam_size", type=int, default=5)
+    ap.add_argument(
+        "--min_separation",
+        type=float,
+        default=1.0,
+        help="Minimum room separation; 0 disables post-processing",
+    )
     args = ap.parse_args()
 
     try:
@@ -53,7 +59,8 @@ def main():
         beam_size=args.beam_size,
     )
     layout_json = tk.decode_layout_tokens(layout_tokens)
-    layout_json = enforce_min_separation(layout_json)
+    if args.min_separation > 0:
+        layout_json = enforce_min_separation(layout_json, args.min_separation)
 
     json_path = f"{args.out_prefix}.json"
     svg_path = f"{args.out_prefix}.svg"
