@@ -26,7 +26,9 @@ class BlueprintTokenizer:
         # Map common user-facing terms to internal tokens
         self.term_to_token = {
             "master bedroom": "OWNER_SUITE_MAIN",
+            "master suite": "OWNER_SUITE_MAIN",
             "primary bedroom": "OWNER_SUITE_MAIN",
+            "primary suite": "OWNER_SUITE_MAIN",
             "owner's suite": "OWNER_SUITE_MAIN",
             "master bath": "BATHROOM",
             "half bath": "BATHROOM",
@@ -81,13 +83,24 @@ class BlueprintTokenizer:
         if params.get("vaultedCeilings"): ids.append(self.token_to_id["VAULTED"])
 
         loc = (params.get("ownerSuiteLocation") or "").lower()
-        if "main" in loc: ids.append(self.token_to_id["OWNER_SUITE_MAIN"])
-        elif "upper" in loc: ids.append(self.token_to_id["OWNER_SUITE_UPPER"])
+        mapped = self.term_to_token.get(loc)
+        if mapped:
+            ids.append(self.token_to_id[mapped])
+        elif "main" in loc:
+            ids.append(self.token_to_id["OWNER_SUITE_MAIN"])
+        elif "upper" in loc:
+            ids.append(self.token_to_id["OWNER_SUITE_UPPER"])
 
         bath = (params.get("masterBathOption") or "").lower()
-        if "both" in bath: ids.append(self.token_to_id["BATH_BOTH"])
-        elif "tub" in bath: ids.append(self.token_to_id["BATH_TUB"])
-        elif "shower" in bath: ids.append(self.token_to_id["BATH_SHOWER"])
+        mapped = self.term_to_token.get(bath)
+        if mapped:
+            ids.append(self.token_to_id[mapped])
+        elif "both" in bath:
+            ids.append(self.token_to_id["BATH_BOTH"])
+        elif "tub" in bath:
+            ids.append(self.token_to_id["BATH_TUB"])
+        elif "shower" in bath:
+            ids.append(self.token_to_id["BATH_SHOWER"])
 
         if params.get("ceilingHeight"): ids.append(self.token_to_id["CEILING_H"])
         if params.get("windowHeight"): ids.append(self.token_to_id["WINDOW_H"])
