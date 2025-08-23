@@ -72,3 +72,49 @@ python interface/cli.py --params sample_params.json
 ```
 
 The `--seed` flag on `build_jsonl.py` ensures the shuffled train/val split is reproducible.
+
+## Deployment
+
+### Build the Container
+
+The provided `Dockerfile` bundles the API server, model weights (if present in
+`checkpoints/`), and the front-end assets. Build the image locally:
+
+```bash
+docker build -t blueprint-generator .
+```
+
+You can override the API URL baked into the front-end with the
+`VITE_API_BASE_URL` build argument:
+
+```bash
+docker build -t blueprint-generator \
+  --build-arg VITE_API_BASE_URL=https://example.com \
+  .
+```
+
+### docker-compose
+
+Use the included `docker-compose.yml` to run the web server, optional Redis
+queue, and Prometheus monitoring:
+
+```bash
+docker-compose up --build
+```
+
+Services:
+
+* **app** – FastAPI server serving the API and static front-end at
+  `http://localhost:8000/app/`
+* **queue** – Redis instance for background jobs (optional)
+* **prometheus** – metrics collector available at `http://localhost:9090`
+
+### Environment Variables
+
+* `DEVICE` – set to `cpu` or `cuda` to control inference hardware (default:
+  `cpu`).
+* `RATE_LIMIT` – requests per API key per minute (default: `60`).
+
+For production deployments, build the image with the desired API base URL and
+run using docker-compose with the appropriate environment variables set (e.g.
+`DEVICE=cuda`).

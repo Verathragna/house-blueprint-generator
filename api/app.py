@@ -11,6 +11,7 @@ from fastapi import (
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from fastapi.exceptions import RequestValidationError
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from prometheus_client import (
     Counter,
@@ -451,3 +452,8 @@ async def job_updates(websocket: WebSocket, job_id: str):
         logger.info("WebSocket disconnected for job %s", job_id)
     finally:
         await websocket.close()
+
+# Serve built front-end assets if present
+frontend_dir = os.path.join(REPO_ROOT, "interface", "web", "dist")
+if os.path.isdir(frontend_dir):
+    app.mount("/app", StaticFiles(directory=frontend_dir, html=True), name="frontend")
