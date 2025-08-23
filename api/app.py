@@ -35,6 +35,9 @@ from Generate.params import Params
 CHECKPOINT = os.path.join(REPO_ROOT, "checkpoints", "model_latest.pth")
 DEVICE = os.environ.get("DEVICE", "cpu")
 
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("blueprint_api")
+
 
 def _read_version(component: str) -> str:
     """Read the VERSION file for a component."""
@@ -51,10 +54,7 @@ if MODEL_VERSION != TOKENIZER_VERSION:
     raise RuntimeError(
         f"Model version {MODEL_VERSION} is incompatible with tokenizer version {TOKENIZER_VERSION}"
     )
-
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("blueprint_api")
+logger.info("Loaded model version %s with tokenizer version %s", MODEL_VERSION, TOKENIZER_VERSION)
 
 # Simple API key auth
 API_KEYS = set(filter(None, os.environ.get("API_KEYS", "testkey").split(",")))
