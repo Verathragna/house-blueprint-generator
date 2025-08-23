@@ -66,7 +66,7 @@ def main(seed: int = 42, augment: bool = False) -> None:
         for r in val:
             wf.write(json.dumps(r) + "\n")
 
-    print(f"✅ Wrote {len(train)} train and {len(val)} val rows to {out_dir}")
+    print(f"Wrote {len(train)} train and {len(val)} val rows to {out_dir}")
 
 
 if __name__ == "__main__":
