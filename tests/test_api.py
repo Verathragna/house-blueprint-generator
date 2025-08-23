@@ -17,6 +17,7 @@ def dummy_render(layout_json, svg_path):
 
 def test_generate_returns_job_and_result(tmp_path):
     client = TestClient(app)
+    headers = {"X-API-Key": "testkey"}
     payload = {"params": {}}
     with patch("api.app._get_model", lambda: object()), \
          patch("api.app.decode", lambda *args, **kwargs: []), \
@@ -27,11 +28,11 @@ def test_generate_returns_job_and_result(tmp_path):
          patch("api.app.REPO_ROOT", str(tmp_path)), \
          patch("api.app.uuid.uuid4") as mock_uuid:
         mock_uuid.side_effect = [uuid.UUID(int=1), uuid.UUID(int=2)]
-        resp = client.post("/generate", json=payload)
+        resp = client.post("/generate", json=payload, headers=headers)
         assert resp.status_code == 200
         job_id = resp.json()["job_id"]
         for _ in range(10):
-            status_resp = client.get(f"/status/{job_id}")
+            status_resp = client.get(f"/status/{job_id}", headers=headers)
             assert status_resp.status_code == 200
             data = status_resp.json()
             if data["status"] == "completed":
@@ -46,8 +47,9 @@ def test_generate_returns_job_and_result(tmp_path):
 
 def test_validation_error_has_metadata():
     client = TestClient(app)
+    headers = {"X-API-Key": "testkey"}
     payload = {"params": {}, "beam_size": 0}
-    resp = client.post("/generate", json=payload)
+    resp = client.post("/generate", json=payload, headers=headers)
     assert resp.status_code == 422
     data = resp.json()
     assert data["code"] == "validation_error"

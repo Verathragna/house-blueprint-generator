@@ -1,6 +1,13 @@
 import os, sys, base64, threading, uuid, time, logging, queue, asyncio
 from typing import Any, Dict, Optional, Tuple, List
-from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi import (
+    FastAPI,
+    HTTPException,
+    Request,
+    WebSocket,
+    WebSocketDisconnect,
+    Depends,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from fastapi.exceptions import RequestValidationError
@@ -47,6 +54,19 @@ if MODEL_VERSION != TOKENIZER_VERSION:
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("blueprint_api")
+
+# Simple API key auth
+API_KEYS = set(filter(None, os.environ.get("API_KEYS", "testkey").split(",")))
+
+
+def _get_api_key(request: Request) -> str:
+    api_key = request.headers.get("X-API-Key")
+    if not api_key or api_key not in API_KEYS:
+        raise HTTPException(
+            status_code=401,
+            detail={"code": "unauthorized", "message": "Invalid API key"},
+        )
+    return api_key
 
 
 # Prometheus metrics
@@ -114,6 +134,38 @@ app.add_middleware(
 
 
 @app.middleware("http")
+async def logging_middleware(request: Request, call_next):
+    body = await request.body()
+    if body:
+        logger.info("Request %s %s body: %s", request.method, request.url.path, body.decode("utf-8", "ignore"))
+    else:
+        logger.info("Request %s %s", request.method, request.url.path)
+
+    async def receive():
+        return {"type": "http.request", "body": body}
+
+    request._receive = receive  # type: ignore
+    response = await call_next(request)
+
+    resp_body = b""
+    async for chunk in response.body_iterator:
+        resp_body += chunk
+    logger.info(
+        "Response %s %s status %s body: %s",
+        request.method,
+        request.url.path,
+        response.status_code,
+        resp_body.decode("utf-8", "ignore"),
+    )
+    return Response(
+        content=resp_body,
+        status_code=response.status_code,
+        headers=dict(response.headers),
+        media_type=response.media_type,
+    )
+
+
+@app.middleware("http")
 async def metrics_middleware(request: Request, call_next):
     start_time = time.perf_counter()
     request.state.start_time = start_time
@@ -144,7 +196,7 @@ _tokenizer = BlueprintTokenizer()
 _model = None
 _lock = threading.Lock()
 
-# simple in-memory rate limiter: requests per IP per minute
+# simple in-memory rate limiter: requests per API key per minute
 RATE_LIMIT = int(os.environ.get("RATE_LIMIT", "60"))
 _WINDOW_SECONDS = 60
 _request_counts: Dict[str, Tuple[float, int]] = {}
@@ -310,18 +362,22 @@ def metrics():
         429: {"model": ErrorResponse},
         500: {"model": ErrorResponse},
         422: {"model": ErrorResponse},
+        401: {"model": ErrorResponse},
     },
 )
-def generate(request: Request, req: GenerateRequest):
+def generate(
+    request: Request,
+    req: GenerateRequest,
+    api_key: str = Depends(_get_api_key),
+):
     params = req.params
     strategy = req.strategy
     temperature = req.temperature
     beam_size = req.beam_size
 
-    # rate limiting
-    ip = request.client.host if request.client else "anonymous"
+    # rate limiting per API key
     now = time.time()
-    window_start, count = _request_counts.get(ip, (now, 0))
+    window_start, count = _request_counts.get(api_key, (now, 0))
     if now - window_start >= _WINDOW_SECONDS:
         window_start, count = now, 0
     if count >= RATE_LIMIT:
@@ -329,7 +385,7 @@ def generate(request: Request, req: GenerateRequest):
             status_code=429,
             detail={"code": "rate_limit_exceeded", "message": "Too many requests"},
         )
-    _request_counts[ip] = (window_start, count + 1)
+    _request_counts[api_key] = (window_start, count + 1)
 
     job_id = uuid.uuid4().hex
     _jobs[job_id] = {
@@ -347,9 +403,9 @@ def generate(request: Request, req: GenerateRequest):
 @app.get(
     "/status/{job_id}",
     response_model=JobStatus,
-    responses={404: {"model": ErrorResponse}},
+    responses={404: {"model": ErrorResponse}, 401: {"model": ErrorResponse}},
 )
-def job_status(job_id: str):
+def job_status(job_id: str, api_key: str = Depends(_get_api_key)):
     job = _jobs.get(job_id)
     if not job:
         raise HTTPException(
@@ -366,6 +422,10 @@ def job_status(job_id: str):
 
 @app.websocket("/ws/{job_id}")
 async def job_updates(websocket: WebSocket, job_id: str):
+    api_key = websocket.headers.get("x-api-key")
+    if not api_key or api_key not in API_KEYS:
+        await websocket.close(code=1008)
+        return
     job = _jobs.get(job_id)
     if job is None:
         await websocket.close(code=1008)
