@@ -2,6 +2,7 @@ import argparse
 import base64
 import json
 import os
+import time
 import requests
 
 
@@ -9,17 +10,16 @@ def main():
     parser = argparse.ArgumentParser(description="Generate a house blueprint via the API")
     parser.add_argument(
         "--api",
-        default="http://localhost:8000/generate",
-        help="Blueprint generation API endpoint",
+        default="http://localhost:8000",
+        help="Base URL of the Blueprint generation API",
     )
     parser.add_argument(
         "--params",
         default="sample_params.json",
         help="Path to JSON file with generation parameters",
     )
-    parser.add_argument(
-        "--outdir", default="generated_cli", help="Directory to save outputs"
-    )
+    parser.add_argument("--outdir", default="generated_cli", help="Directory to save outputs")
+    parser.add_argument("--api-key", default="testkey", help="API key for authentication")
     parser.add_argument(
         "--strategy",
         default="greedy",
@@ -50,8 +50,9 @@ def main():
         "beam_size": args.beam_size,
         "min_separation": args.min_separation,
     }
+    headers = {"X-API-Key": args.api_key}
     try:
-        resp = requests.post(args.api, json=payload)
+        resp = requests.post(f"{args.api.rstrip('/')}/generate", json=payload, headers=headers)
         data = resp.json()
     except Exception as e:
         print(f"Failed to contact API: {e}")
@@ -60,6 +61,26 @@ def main():
     if resp.status_code != 200:
         print(f"Error: {data.get('message', data)}")
         return
+
+    job_id = data["job_id"]
+    status_url = f"{args.api.rstrip('/')}/status/{job_id}"
+    while True:
+        try:
+            status_resp = requests.get(status_url, headers=headers)
+            status_data = status_resp.json()
+        except Exception as e:
+            print(f"Failed to get status: {e}")
+            return
+        if status_resp.status_code != 200:
+            print(f"Error: {status_data.get('message', status_data)}")
+            return
+        if status_data["status"] == "completed":
+            data = status_data["result"]
+            break
+        if status_data["status"] == "failed":
+            print(f"Job failed: {status_data.get('error')}")
+            return
+        time.sleep(1)
 
     os.makedirs(args.outdir, exist_ok=True)
     svg_data = data["svg_data_url"].split(",", 1)[1]
@@ -72,7 +93,7 @@ def main():
     with open(json_path, "w", encoding="utf-8") as f:
         json.dump(data["layout"], f, indent=2)
 
-    gen_time = data.get("generation_time")
+    gen_time = data.get("metadata", {}).get("processing_time")
     if gen_time is not None:
         print(f"Generation time: {gen_time:.2f}s")
     print(f"Saved SVG to {svg_path}")

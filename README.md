@@ -15,16 +15,21 @@ pip install -r requirements.txt
 
 ## Dataset Generation
 
-Generate a synthetic dataset and build shuffled train/validation pairs:
+Synthetic layouts are produced with parameter files in `dataset/params/` and
+converted into paired JSONL records for training. Run:
 
 ```bash
-python dataset/generate_dataset.py
-python scripts/build_jsonl.py --seed 42  # use --seed for reproducible shuffling
+python dataset/generate_dataset.py                 # create JSON + SVG pairs
+python scripts/build_jsonl.py --seed 42            # shuffle into train/val splits
 ```
+
+The optional `--seed` flag ensures reproducible shuffling.
 
 ## Training
 
-Train the transformer model on the generated dataset:
+Train the transformer using the prepared JSONL files. The example below trains
+for 10 epochs with a batch size of 16 on the default device (CPU unless CUDA is
+available):
 
 ```bash
 python training/train.py --epochs 10 --batch 16
@@ -42,11 +47,12 @@ python Generate/generate_blueprint.py --params_json sample_params.json --out_pre
 
 ### API
 
-Serve the model via FastAPI. The `DEVICE` environment variable controls whether the model runs on `cpu` or `cuda`:
+Serve the model via FastAPI. The `DEVICE` environment variable controls whether
+the model runs on `cpu` or `cuda`:
 
 ```bash
 DEVICE=cuda uvicorn api.app:app --host 0.0.0.0 --port 8000 --reload
-# POST to /generate with params JSON; response contains layout JSON and data-URL SVG
+# POST to /generate with params JSON; response contains a job id
 ```
 
 ### Web Interface
@@ -71,7 +77,8 @@ For non-technical users, a basic command line interface is available:
 python interface/cli.py --params sample_params.json
 ```
 
-The `--seed` flag on `build_jsonl.py` ensures the shuffled train/val split is reproducible.
+The CLI queues a job with the API, polls for completion, and saves both SVG and
+JSON outputs to `generated_cli/`.
 
 ## Deployment
 

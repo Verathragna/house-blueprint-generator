@@ -117,6 +117,7 @@ class ErrorResponse(BaseModel):
 
 class JobResponse(BaseModel):
     job_id: str
+    metadata: Metadata
 
 
 class JobStatus(BaseModel):
@@ -124,6 +125,7 @@ class JobStatus(BaseModel):
     logs: List[str]
     result: Optional[GenerateResponse] = None
     error: Optional[str] = None
+    metadata: Metadata
 
 app = FastAPI(title="Blueprint Generator API", version="1.0.0")
 app.add_middleware(
@@ -202,6 +204,30 @@ _lock = threading.Lock()
 RATE_LIMIT = int(os.environ.get("RATE_LIMIT", "60"))
 _WINDOW_SECONDS = 60
 _request_counts: Dict[str, Tuple[float, int]] = {}
+_rate_lock = threading.Lock()
+
+
+def _check_rate_limit(api_key: str) -> Tuple[int, int]:
+    """Increment request count for an API key and return limit info.
+
+    Raises
+    ------
+    HTTPException
+        If the API key has exceeded its allotment for the current window.
+    """
+    now = time.time()
+    with _rate_lock:
+        window_start, count = _request_counts.get(api_key, (now, 0))
+        if now - window_start >= _WINDOW_SECONDS:
+            window_start, count = now, 0
+        if count >= RATE_LIMIT:
+            raise HTTPException(
+                status_code=429,
+                detail={"code": "rate_limit_exceeded", "message": "Too many requests"},
+            )
+        _request_counts[api_key] = (window_start, count + 1)
+        remaining = RATE_LIMIT - (count + 1)
+    return RATE_LIMIT, remaining
 
 # Background job queue and status store
 _task_queue: "queue.Queue[Tuple[str, Params, str, float, int, float]]" = queue.Queue()
@@ -371,8 +397,10 @@ def metrics():
 def generate(
     request: Request,
     req: GenerateRequest,
+    response: Response,
     api_key: str = Depends(_get_api_key),
 ):
+    start = time.perf_counter()
     try:
         params = Params.model_validate(req.params.model_dump())
     except ValidationError as e:
@@ -387,16 +415,9 @@ def generate(
     min_sep = req.min_separation
 
     # rate limiting per API key
-    now = time.time()
-    window_start, count = _request_counts.get(api_key, (now, 0))
-    if now - window_start >= _WINDOW_SECONDS:
-        window_start, count = now, 0
-    if count >= RATE_LIMIT:
-        raise HTTPException(
-            status_code=429,
-            detail={"code": "rate_limit_exceeded", "message": "Too many requests"},
-        )
-    _request_counts[api_key] = (window_start, count + 1)
+    limit, remaining = _check_rate_limit(api_key)
+    response.headers["X-RateLimit-Limit"] = str(limit)
+    response.headers["X-RateLimit-Remaining"] = str(remaining)
 
     job_id = uuid.uuid4().hex
     _jobs[job_id] = {
@@ -408,7 +429,8 @@ def generate(
     }
     _task_queue.put((job_id, params, strategy, temperature, beam_size, min_sep))
     _jobs[job_id]["event"].set()
-    return JobResponse(job_id=job_id)
+    processing_time = time.perf_counter() - start
+    return JobResponse(job_id=job_id, metadata=Metadata(processing_time=processing_time))
 
 
 @app.get(
@@ -416,7 +438,16 @@ def generate(
     response_model=JobStatus,
     responses={404: {"model": ErrorResponse}, 401: {"model": ErrorResponse}},
 )
-def job_status(job_id: str, api_key: str = Depends(_get_api_key)):
+def job_status(
+    job_id: str,
+    response: Response,
+    api_key: str = Depends(_get_api_key),
+):
+    start = time.perf_counter()
+    limit, remaining = _check_rate_limit(api_key)
+    response.headers["X-RateLimit-Limit"] = str(limit)
+    response.headers["X-RateLimit-Remaining"] = str(remaining)
+
     job = _jobs.get(job_id)
     if not job:
         raise HTTPException(
@@ -428,6 +459,8 @@ def job_status(job_id: str, api_key: str = Depends(_get_api_key)):
         data["result"] = job["result"]
     if job["status"] == "failed":
         data["error"] = job["error"]
+    processing_time = time.perf_counter() - start
+    data["metadata"] = Metadata(processing_time=processing_time)
     return JobStatus(**data)
 
 
