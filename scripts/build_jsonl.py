@@ -1,9 +1,10 @@
-import os
-import json
-import random
 import argparse
+import json
+import os
+import random
 
 from tokenizer.tokenizer import BlueprintTokenizer
+from dataset.augmentation import mirror_layout, rotate_layout
 
 try:
     import numpy as np
@@ -19,7 +20,7 @@ else:
     torch = None
 
 
-def main(seed: int = 42) -> None:
+def main(seed: int = 42, augment: bool = False) -> None:
     random.seed(seed)
     if np is not None:
         np.random.seed(seed)
@@ -47,6 +48,13 @@ def main(seed: int = 42) -> None:
             x_ids, y_ids = tk.build_training_pair(inp, layout)
             pairs.append({"params": inp, "layout": layout, "x": x_ids, "y": y_ids})
 
+            if augment:
+                for aug_layout in (mirror_layout(layout), rotate_layout(layout)):
+                    for room in aug_layout.get("layout", {}).get("rooms", []):
+                        room.setdefault("position", {"x": 0, "y": 0})
+                    ax, ay = tk.build_training_pair(inp, aug_layout)
+                    pairs.append({"params": inp, "layout": aug_layout, "x": ax, "y": ay})
+
     random.shuffle(pairs)
     cut = int(0.9 * len(pairs)) if pairs else 0
     train, val = pairs[:cut], pairs[cut:]
@@ -69,5 +77,10 @@ if __name__ == "__main__":
         default=42,
         help="Random seed for shuffling and any libraries in use.",
     )
+    parser.add_argument(
+        "--augment",
+        action="store_true",
+        help="Apply simple mirroring/rotation augmentations",
+    )
     args = parser.parse_args()
-    main(args.seed)
+    main(args.seed, augment=args.augment)
