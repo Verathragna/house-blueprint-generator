@@ -1,8 +1,9 @@
 """Geometry validators for generated house layouts.
 
-This module provides simple geometric checks to ensure rooms do not
-overlap and stay within a predefined bounding box.  The functions
-return human readable strings describing any issues that are found.
+This module provides simple geometric checks to ensure rooms stay within
+a predefined bounding box, do not overlap, and maintain a minimum
+separation distance.  The functions return human readable strings
+describing any issues that are found.
 """
 
 from __future__ import annotations
@@ -63,7 +64,14 @@ def check_overlaps(rooms: List[Dict]) -> List[str]:
 
 
 def _too_close(r1: Dict, r2: Dict, min_sep: float) -> bool:
-    """Return True if two rooms are closer than ``min_sep``."""
+    """Return ``True`` if two rooms are closer than ``min_sep``.
+
+    The rooms are represented by axis-aligned bounding boxes.  Two rooms
+    are considered "too close" if the distance between their rectangles
+    is less than ``min_sep`` in either the x or y direction.  A
+    ``min_sep`` of ``0`` therefore degenerates to a pure overlap check.
+    """
+
     ax1, ay1, ax2, ay2 = _room_bounds(r1)
     bx1, by1, bx2, by2 = _room_bounds(r2)
     return not (
@@ -72,6 +80,30 @@ def _too_close(r1: Dict, r2: Dict, min_sep: float) -> bool:
         or ay2 + min_sep <= by1
         or by2 + min_sep <= ay1
     )
+
+
+def check_separation(rooms: List[Dict], min_sep: float) -> List[str]:
+    """Ensure rooms are at least ``min_sep`` units apart.
+
+    Args:
+        rooms: List of room dictionaries.
+        min_sep: Minimum required separation between rooms.
+
+    Returns:
+        List of issues describing rooms that are closer than ``min_sep``.
+    """
+
+    issues: List[str] = []
+    if min_sep <= 0:
+        return issues
+
+    for i, r1 in enumerate(rooms):
+        for r2 in rooms[i + 1 :]:
+            if _too_close(r1, r2, min_sep):
+                issues.append(
+                    f"Room {r1.get('type', 'Unknown')} is within {min_sep} of {r2.get('type', 'Unknown')}"
+                )
+    return issues
 
 
 def enforce_min_separation(layout: Dict, min_sep: float = 1.0) -> Dict:
@@ -92,27 +124,38 @@ def enforce_min_separation(layout: Dict, min_sep: float = 1.0) -> Dict:
     return layout
 
 
-def validate_layout(layout: Dict, max_width: float = 40, max_length: float = 40) -> List[str]:
+def validate_layout(
+    layout: Dict,
+    max_width: float = 40,
+    max_length: float = 40,
+    min_separation: float = 0,
+) -> List[str]:
     """Validate layout geometry.
 
     Args:
         layout: Layout dictionary containing rooms under ``layout['rooms']``.
         max_width: Maximum horizontal extent for bounds checking.
         max_length: Maximum vertical extent for bounds checking.
+        min_separation: Required minimum spacing between rooms. ``0`` skips
+            the check.
 
     Returns:
         A list of issues. Empty if layout passes validation.
     """
+
     rooms = (layout.get("layout") or {}).get("rooms", [])
-    issues = []
+    issues: List[str] = []
     issues.extend(check_bounds(rooms, max_width=max_width, max_length=max_length))
     issues.extend(check_overlaps(rooms))
+    if min_separation > 0:
+        issues.extend(check_separation(rooms, min_separation))
     return issues
 
 
 __all__ = [
     "check_bounds",
     "check_overlaps",
+    "check_separation",
     "validate_layout",
     "enforce_min_separation",
 ]

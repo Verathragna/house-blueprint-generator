@@ -71,6 +71,12 @@ def main() -> None:
     ap.add_argument("--params", required=True, help="Path to parameters JSON")
     ap.add_argument("--layout", required=True, help="Path to generated layout JSON")
     ap.add_argument("--svg_out", default="evaluation.svg", help="Path to write SVG rendering")
+    ap.add_argument(
+        "--min_sep",
+        type=float,
+        default=0.0,
+        help="Minimum separation required between rooms during validation",
+    )
     args = ap.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
@@ -81,7 +87,7 @@ def main() -> None:
     render_layout_svg(layout, args.svg_out)
     log.info("Rendered layout SVG to %s", Path(args.svg_out).resolve())
 
-    issues = validate_layout(layout)
+    issues = validate_layout(layout, min_separation=args.min_sep)
     issues.extend(compare_with_params(layout, params))
 
     if issues:
