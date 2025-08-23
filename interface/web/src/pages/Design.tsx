@@ -1,31 +1,16 @@
 import React, { useState } from 'react';
 import { Save, Download, Loader2 } from 'lucide-react';
+import ErrorModal from '../components/ErrorModal';
+import {
+  designFormSchema,
+  architecturalStyles,
+  specialFeatures,
+  budgetRanges,
+  budgetLabels,
+  DesignFormData
+} from '../validation';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
-
-/**
- * @typedef {Object} DesignFormData
- * @property {string} squareFootage - Total square footage of the house
- * @property {string} bedrooms - Number of bedrooms
- * @property {string} bathrooms - Number of bathrooms
- * @property {string} floors - Number of floors
- * @property {string} style - Architectural style preference
- * @property {string} lotWidth - Width of the lot in feet
- * @property {string} lotLength - Length of the lot in feet
- * @property {string[]} specialRequirements - Array of special features requested
- * @property {string} budget - Budget range for the project
- */
-interface DesignFormData {
-  squareFootage: string;
-  bedrooms: string;
-  bathrooms: string;
-  floors: string;
-  style: string;
-  lotWidth: string;
-  lotLength: string;
-  specialRequirements: string[];
-  budget: string;
-}
 
 /**
  * @typedef {Object} BlueprintData
@@ -58,13 +43,13 @@ interface BlueprintData {
 const DesignPage = () => {
   // Track current step in the design process
   const [step, setStep] = useState(1);
-  
+
   // Control loading state during blueprint generation
   const [isGenerating, setIsGenerating] = useState(false);
-  
+
   // Store generated blueprint data
   const [blueprintData, setBlueprintData] = useState<BlueprintData | null>(null);
-  
+
   // Centralized state for form data
   const [formData, setFormData] = useState<DesignFormData>({
     squareFootage: '',
@@ -77,6 +62,12 @@ const DesignPage = () => {
     specialRequirements: [],
     budget: ''
   });
+
+  // Track validation errors for form fields
+  const [errors, setErrors] = useState<Partial<Record<keyof DesignFormData, string>>>({});
+
+  // Holds message for modal display when requests fail
+  const [errorMessage, setErrorMessage] = useState('');
 
   /**
    * Generate a blueprint by calling the backend API and polling for completion.
@@ -144,68 +135,48 @@ const DesignPage = () => {
     }
   };
 
-  const architecturalStyles = [
-    'Modern',
-    'Contemporary',
-    'Traditional',
-    'Colonial',
-    'Mediterranean',
-    'Craftsman',
-    'Ranch',
-    'Victorian'
-  ];
-
-  const specialFeatures = [
-    'Garage',
-    'Basement',
-    'Home Office',
-    'Open Floor Plan',
-    'Master Suite',
-    'Outdoor Kitchen',
-    'Pool',
-    'Solar Panels'
-  ];
-
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    setFormData({
-      ...formData,
-      [e.target.name]: e.target.value
-    });
+  /**
+   * Validate form data against the server-side schema mirror.
+   * @param {DesignFormData} data - Current form data
+   * @returns {boolean} Whether the data is valid
+   */
+  const validate = (data: DesignFormData) => {
+    const result = designFormSchema.safeParse(data);
+    if (!result.success) {
+      const fieldErrors: Partial<Record<keyof DesignFormData, string>> = {};
+      result.error.errors.forEach(err => {
+        const field = err.path[0] as keyof DesignFormData;
+        fieldErrors[field] = err.message;
+      });
+      setErrors(fieldErrors);
+      return false;
+    }
+    setErrors({});
+    return true;
+  };
+ 
+  const handleInputChange = (
+    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
+  ) => {
+    const { name, value } = e.target;
+    const updated = { ...formData, [name]: value } as DesignFormData;
+    setFormData(updated);
+    validate(updated);
   };
 
-  const handleCheckboxChange = (feature: string) => {
-    setFormData(prev => ({
-      ...prev,
-      specialRequirements: prev.specialRequirements.includes(feature)
-        ? prev.specialRequirements.filter(f => f !== feature)
-        : [...prev.specialRequirements, feature]
-    }));
-  };
-
-  const validateForm = () => {
-    const { squareFootage, bedrooms, bathrooms, floors, style, lotWidth, lotLength, budget } = formData;
-    return (
-      squareFootage && 
-      bedrooms && 
-      bathrooms && 
-      floors && 
-      style && 
-      lotWidth && 
-      lotLength && 
-      budget &&
-      Number(squareFootage) > 0 &&
-      Number(bedrooms) > 0 &&
-      Number(bathrooms) > 0 &&
-      Number(floors) > 0 &&
-      Number(lotWidth) > 0 &&
-      Number(lotLength) > 0
-    );
+  const handleCheckboxChange = (feature: typeof specialFeatures[number]) => {
+    const updatedFeatures = formData.specialRequirements.includes(feature)
+      ? formData.specialRequirements.filter(f => f !== feature)
+      : [...formData.specialRequirements, feature];
+    const updated = { ...formData, specialRequirements: updatedFeatures };
+    setFormData(updated);
+    validate(updated);
   };
 
   /**
    * Handles form submission and blueprint generation.
    * Validates input, shows loading state, and transitions to preview step.
-   * 
+   *
    * Process:
    * 1. Prevent default form submission
    * 2. Validate form data
@@ -213,31 +184,43 @@ const DesignPage = () => {
    * 4. Generate blueprint
    * 5. Store blueprint data
    * 6. Transition to preview step
-   * 
+   *
    * @param {React.FormEvent} e - Form submission event
    */
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!validateForm()) {
-      alert('Please fill in all required fields with valid values');
+    if (!validate(formData)) {
+      setErrorMessage('Please fix the errors in the form before submitting.');
       return;
     }
-    
+
     setIsGenerating(true);
     try {
       const generatedBlueprint = await generateBlueprint(formData);
       setBlueprintData(generatedBlueprint);
       setStep(2);
     } catch (error) {
-      alert('Error generating blueprint. Please try again.');
       console.error('Blueprint generation error:', error);
+      setErrorMessage('Error generating blueprint. Please try again.');
     } finally {
       setIsGenerating(false);
     }
   };
 
   return (
-    <div className="pt-16 min-h-screen bg-gray-50">
+    <React.Fragment>
+      {isGenerating && (
+        <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-40">
+          <div className="bg-white p-4 rounded-md flex items-center">
+            <Loader2 className="animate-spin h-5 w-5 mr-2" />
+            Generating blueprint...
+          </div>
+        </div>
+      )}
+      {errorMessage && (
+        <ErrorModal message={errorMessage} onClose={() => setErrorMessage('')} />
+      )}
+      <div className="pt-16 min-h-screen bg-gray-50">
       {/* Progress indicator */}
       <div className="bg-white shadow">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -277,6 +260,9 @@ const DesignPage = () => {
                     required
                     min="500"
                   />
+                  {errors.squareFootage && (
+                    <p className="text-red-500 text-sm mt-1">{errors.squareFootage}</p>
+                  )}
                 </div>
 
                 <div>
@@ -292,6 +278,9 @@ const DesignPage = () => {
                     required
                     min="1"
                   />
+                  {errors.bedrooms && (
+                    <p className="text-red-500 text-sm mt-1">{errors.bedrooms}</p>
+                  )}
                 </div>
 
                 <div>
@@ -307,6 +296,9 @@ const DesignPage = () => {
                     required
                     min="1"
                   />
+                  {errors.bathrooms && (
+                    <p className="text-red-500 text-sm mt-1">{errors.bathrooms}</p>
+                  )}
                 </div>
 
                 <div>
@@ -323,6 +315,9 @@ const DesignPage = () => {
                     min="1"
                     max="4"
                   />
+                  {errors.floors && (
+                    <p className="text-red-500 text-sm mt-1">{errors.floors}</p>
+                  )}
                 </div>
 
                 <div>
@@ -338,6 +333,9 @@ const DesignPage = () => {
                     required
                     min="20"
                   />
+                  {errors.lotWidth && (
+                    <p className="text-red-500 text-sm mt-1">{errors.lotWidth}</p>
+                  )}
                 </div>
 
                 <div>
@@ -353,6 +351,9 @@ const DesignPage = () => {
                     required
                     min="20"
                   />
+                  {errors.lotLength && (
+                    <p className="text-red-500 text-sm mt-1">{errors.lotLength}</p>
+                  )}
                 </div>
 
                 <div>
@@ -367,11 +368,15 @@ const DesignPage = () => {
                     required
                   >
                     <option value="">Select a range</option>
-                    <option value="200-300k">$200,000 - $300,000</option>
-                    <option value="300-400k">$300,000 - $400,000</option>
-                    <option value="400-500k">$400,000 - $500,000</option>
-                    <option value="500k+">$500,000+</option>
+                    {budgetRanges.map(range => (
+                      <option key={range} value={range}>
+                        {budgetLabels[range]}
+                      </option>
+                    ))}
                   </select>
+                  {errors.budget && (
+                    <p className="text-red-500 text-sm mt-1">{errors.budget}</p>
+                  )}
                 </div>
 
                 <div>
@@ -390,6 +395,9 @@ const DesignPage = () => {
                       <option key={style} value={style}>{style}</option>
                     ))}
                   </select>
+                  {errors.style && (
+                    <p className="text-red-500 text-sm mt-1">{errors.style}</p>
+                  )}
                 </div>
               </div>
 
@@ -433,8 +441,9 @@ const DesignPage = () => {
             </form>
           </div>
         ) : (
-          /* Step 2: Blueprint Preview */
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <React.Fragment>
+            {/* Step 2: Blueprint Preview */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             {/* Blueprint preview panel */}
             <div className="lg:col-span-2 bg-white rounded-lg shadow-lg p-6">
               <div className="space-y-6">
@@ -522,9 +531,10 @@ const DesignPage = () => {
               </div>
             </div>
           </div>
+          </React.Fragment>
         )}
       </div>
-    </div>
+    </React.Fragment>
   );
 };
 
