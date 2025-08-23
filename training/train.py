@@ -1,4 +1,4 @@
-import os, sys, json, argparse, re, torch
+import os, sys, json, argparse, re, torch, subprocess
 from torch.utils.data import Dataset, DataLoader
 from torch.nn.utils.rnn import pad_sequence
 
@@ -52,44 +52,88 @@ def list_and_cleanup(keep_last_n=3):
             os.remove(os.path.join(CHECKPOINT_DIR, f))
             print(f"🗑️ Deleted {f}")
 
-def train(epochs=10, batch_size=16, lr=1e-4, layers=4, hidden_size=128, resume=None):
+
+def ensure_dataset(train_path: str, val_path: str) -> bool:
+    """Generate training data if missing."""
+    if os.path.exists(train_path) and os.path.exists(val_path):
+        return True
+
+    print("⚠️ No training data found. Generating synthetic dataset...")
+    try:
+        subprocess.run([sys.executable, "-m", "dataset.generate_dataset"], check=True, cwd=repo_root)
+        subprocess.run([sys.executable, "-m", "scripts.build_jsonl"], check=True, cwd=repo_root)
+    except Exception as e:  # pragma: no cover - best effort generation
+        print(f"❌ Failed to build dataset: {e}")
+        return False
+    return os.path.exists(train_path) and os.path.exists(val_path)
+
+def train(
+    epochs=10,
+    batch_size=16,
+    lr=1e-4,
+    layers=4,
+    hidden_size=128,
+    device="cpu",
+    resume=None,
+):
     tk = BlueprintTokenizer()
     vocab_size = tk.get_vocab_size()
 
     train_path = os.path.join(repo_root, "dataset", "train.jsonl")
     val_path = os.path.join(repo_root, "dataset", "val.jsonl")
 
+    if not ensure_dataset(train_path, val_path):
+        print("❌ Dataset generation failed. Aborting training.")
+        return
+
     train_set = PairDataset(train_path, tk)
     val_set = PairDataset(val_path, tk)
 
     if len(train_set) == 0:
-        print("⚠️ No training data found. Run: python dataset/generate_dataset.py && python scripts/build_jsonl.py")
+        print("❌ Dataset generation produced no data. Aborting training.")
         return
 
     train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True, collate_fn=collate_fn)
     val_loader = DataLoader(val_set, batch_size=batch_size, shuffle=False, collate_fn=collate_fn)
 
-    model = LayoutTransformer(vocab_size=vocab_size, d_model=hidden_size, num_layers=layers, dim_ff=hidden_size * 4)
+    device = torch.device(device)
+    model = LayoutTransformer(
+        vocab_size=vocab_size,
+        d_model=hidden_size,
+        num_layers=layers,
+        dim_ff=hidden_size * 4,
+    ).to(device)
     opt = torch.optim.Adam(model.parameters(), lr=lr)
     crit = torch.nn.CrossEntropyLoss(ignore_index=PAD_ID)
 
     start_epoch = 0
     if resume and os.path.exists(resume):
         print(f"🔁 Resuming from checkpoint {resume}...")
-        checkpoint = torch.load(resume, map_location="cpu")
+        checkpoint = torch.load(resume, map_location=device)
         model.load_state_dict(checkpoint.get("model", checkpoint))
+        model.to(device)
         if "optimizer" in checkpoint:
             opt.load_state_dict(checkpoint["optimizer"])
+            for state in opt.state.values():
+                for k, v in state.items():
+                    if isinstance(v, torch.Tensor):
+                        state[k] = v.to(device)
         start_epoch = checkpoint.get("epoch", -1) + 1
 
     def run_epoch(loader, train_mode=True):
         model.train(train_mode)
         total = 0.0
         for x, y, mask in loader:
+            x = x.to(device)
+            y = y.to(device)
+            mask = mask.to(device)
             logits = model(x, key_padding_mask=mask)
             loss = crit(logits.reshape(-1, vocab_size), y.reshape(-1))
             if train_mode:
-                opt.zero_grad(); loss.backward(); torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0); opt.step()
+                opt.zero_grad()
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                opt.step()
             total += loss.item()
         return total / max(1, len(loader))
 
@@ -111,6 +155,15 @@ if __name__ == "__main__":
     ap.add_argument("--layers", type=int, default=4)
     ap.add_argument("--hidden_size", type=int, default=128)
     ap.add_argument("--learning_rate", type=float, default=1e-4)
+    ap.add_argument("--device", type=str, default="cpu")
     ap.add_argument("--resume", type=str, default=None, help="path to checkpoint to resume from")
     args = ap.parse_args()
-    train(args.epochs, args.batch, args.learning_rate, args.layers, args.hidden_size, args.resume)
+    train(
+        args.epochs,
+        args.batch,
+        args.learning_rate,
+        args.layers,
+        args.hidden_size,
+        args.device,
+        args.resume,
+    )
