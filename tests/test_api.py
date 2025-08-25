@@ -24,6 +24,8 @@ def test_generate_returns_job_and_result(tmp_path):
          patch.object(_tokenizer, "encode_params", return_value=[]), \
          patch.object(_tokenizer, "decode_layout_tokens", return_value={}), \
          patch("api.app.enforce_min_separation", lambda x, min_sep: x), \
+         patch("api.app.validate_layout", lambda *args, **kwargs: []), \
+         patch("api.app.clamp_bounds", lambda layout, mw, mh: layout), \
          patch("api.app.render_layout_svg", dummy_render), \
          patch("api.app.REPO_ROOT", str(tmp_path)), \
          patch("api.app.uuid.uuid4") as mock_uuid:
