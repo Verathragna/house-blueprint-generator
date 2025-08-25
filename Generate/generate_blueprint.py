@@ -8,8 +8,8 @@ from models.layout_transformer import LayoutTransformer
 from tokenizer.tokenizer import BlueprintTokenizer
 from models.decoding import decode
 from dataset.render_svg import render_layout_svg
-from evaluation.validators import enforce_min_separation, clamp_bounds
-from evaluation.evaluate_sample import assert_room_counts
+from evaluation.validators import enforce_min_separation, clamp_bounds, check_bounds
+from evaluation.evaluate_sample import assert_room_counts, BoundaryViolationError
 from Generate.params import Params
 
 CKPT = os.path.join(repo_root, "checkpoints", "model_latest.pth")
@@ -82,6 +82,16 @@ def main():
         dims = raw.get("dimensions") or {}
         max_w = float(dims.get("width", 40))
         max_h = float(dims.get("depth", dims.get("height", 40)))
+        bounds = check_bounds(
+            (layout_json.get("layout") or {}).get("rooms", []),
+            max_width=max_w,
+            max_length=max_h,
+        )
+        if bounds:
+            if attempt < max_attempts - 1:
+                print("Boundary issues detected, regenerating...", file=sys.stderr)
+                continue
+            raise BoundaryViolationError("; ".join(bounds))
         layout_json = clamp_bounds(layout_json, max_w, max_h)
         missing = assert_room_counts(layout_json, raw)
         if not missing:
@@ -113,4 +123,8 @@ def main():
     print(f"Wrote {json_path} and {svg_path}")
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except BoundaryViolationError as exc:
+        print(f"Boundary violation: {exc}", file=sys.stderr)
+        sys.exit(1)
