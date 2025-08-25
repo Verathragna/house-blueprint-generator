@@ -66,6 +66,12 @@ def compare_with_params(layout: dict, params: dict) -> list[str]:
     return issues
 
 
+def assert_room_counts(layout: dict, params: dict) -> None:
+    """Raise ``ValueError`` if requested room counts are not met."""
+    issues = compare_with_params(layout, params)
+    if issues:
+        raise ValueError("; ".join(issues))
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--params", required=True, help="Path to parameters JSON")

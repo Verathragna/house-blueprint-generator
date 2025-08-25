@@ -30,6 +30,7 @@ from models.layout_transformer import LayoutTransformer
 from models.decoding import decode
 from dataset.render_svg import render_layout_svg
 from evaluation.validators import enforce_min_separation
+from evaluation.evaluate_sample import assert_room_counts
 from Generate.params import Params
 
 CHECKPOINT = os.path.join(REPO_ROOT, "checkpoints", "model_latest.pth")
@@ -230,13 +231,13 @@ def _check_rate_limit(api_key: str) -> Tuple[int, int]:
     return RATE_LIMIT, remaining
 
 # Background job queue and status store
-_task_queue: "queue.Queue[Tuple[str, Params, str, float, int, float]]" = queue.Queue()
+_task_queue: "queue.Queue[Tuple[str, Params, dict, str, float, int, float]]" = queue.Queue()
 _jobs: Dict[str, Dict[str, Any]] = {}
 
 
 def _worker():
     while True:
-        job_id, params, strategy, temperature, beam_size, min_sep = _task_queue.get()
+        job_id, params, raw_params, strategy, temperature, beam_size, min_sep = _task_queue.get()
         job = _jobs[job_id]
         try:
             job["status"] = "in_progress"
@@ -249,19 +250,41 @@ def _worker():
             job["event"].set()
 
             prefix = _tokenizer.encode_params(params.model_dump())
-            job["logs"].append("Decoding layout")
-            job["event"].set()
-            layout_tokens = decode(
-                model,
-                prefix,
-                max_len=160,
-                strategy=strategy,
-                temperature=temperature,
-                beam_size=beam_size,
-            )
-            layout_json = _tokenizer.decode_layout_tokens(layout_tokens)
-            if min_sep > 0:
-                layout_json = enforce_min_separation(layout_json, min_sep)
+            room_counts = {}
+            if "bedrooms" in raw_params:
+                room_counts[_tokenizer.token_to_id["BEDROOM"]] = params.bedrooms
+            if "bathrooms" in raw_params:
+                baths = params.bathrooms.full + params.bathrooms.half
+                room_counts[_tokenizer.token_to_id["BATHROOM"]] = baths
+            if raw_params.get("garage"):
+                room_counts[_tokenizer.token_to_id["GARAGE"]] = 1
+
+            max_attempts = 3
+            layout_json = None
+            last_error = None
+            for _ in range(max_attempts):
+                job["logs"].append("Decoding layout")
+                job["event"].set()
+                layout_tokens = decode(
+                    model,
+                    prefix,
+                    max_len=160,
+                    strategy=strategy,
+                    temperature=temperature,
+                    beam_size=beam_size,
+                    required_counts=room_counts,
+                )
+                layout_json = _tokenizer.decode_layout_tokens(layout_tokens)
+                if min_sep > 0:
+                    layout_json = enforce_min_separation(layout_json, min_sep)
+                try:
+                    assert_room_counts(layout_json, raw_params)
+                    break
+                except ValueError as e:
+                    last_error = e
+            else:
+                raise last_error or ValueError("room count mismatch")
+
             job["logs"].append("Rendering layout")
             job["event"].set()
 
@@ -427,7 +450,8 @@ def generate(
         "error": None,
         "event": threading.Event(),
     }
-    _task_queue.put((job_id, params, strategy, temperature, beam_size, min_sep))
+    raw_params = req.params.model_dump(exclude_unset=True)
+    _task_queue.put((job_id, params, raw_params, strategy, temperature, beam_size, min_sep))
     _jobs[job_id]["event"].set()
     processing_time = time.perf_counter() - start
     return JobResponse(job_id=job_id, metadata=Metadata(processing_time=processing_time))

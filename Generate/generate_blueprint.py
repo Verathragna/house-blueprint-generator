@@ -9,6 +9,7 @@ from tokenizer.tokenizer import BlueprintTokenizer
 from models.decoding import decode
 from dataset.render_svg import render_layout_svg
 from evaluation.validators import enforce_min_separation
+from evaluation.evaluate_sample import assert_room_counts
 from Generate.params import Params
 
 CKPT = os.path.join(repo_root, "checkpoints", "model_latest.pth")
@@ -51,17 +52,35 @@ def main():
     model.to(args.device)
 
     prefix = tk.encode_params(params.model_dump())
-    layout_tokens = decode(
-        model,
-        prefix,
-        max_len=160,
-        strategy=args.strategy,
-        temperature=args.temperature,
-        beam_size=args.beam_size,
-    )
-    layout_json = tk.decode_layout_tokens(layout_tokens)
-    if args.min_separation > 0:
-        layout_json = enforce_min_separation(layout_json, args.min_separation)
+    room_counts = {}
+    if "bedrooms" in raw:
+        room_counts[tk.token_to_id["BEDROOM"]] = params.bedrooms
+    if "bathrooms" in raw:
+        room_counts[tk.token_to_id["BATHROOM"]] = params.bathrooms.full + params.bathrooms.half
+    if raw.get("garage"):
+        room_counts[tk.token_to_id["GARAGE"]] = 1
+
+    max_attempts = 3
+    layout_json = None
+    for attempt in range(max_attempts):
+        layout_tokens = decode(
+            model,
+            prefix,
+            max_len=160,
+            strategy=args.strategy,
+            temperature=args.temperature,
+            beam_size=args.beam_size,
+            required_counts=room_counts,
+        )
+        layout_json = tk.decode_layout_tokens(layout_tokens)
+        if args.min_separation > 0:
+            layout_json = enforce_min_separation(layout_json, args.min_separation)
+        try:
+            assert_room_counts(layout_json, raw)
+            break
+        except ValueError as e:
+            if attempt == max_attempts - 1:
+                raise
 
     json_path = f"{args.out_prefix}.json"
     svg_path = f"{args.out_prefix}.svg"
