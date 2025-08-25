@@ -29,7 +29,7 @@ from tokenizer.tokenizer import BlueprintTokenizer
 from models.layout_transformer import LayoutTransformer
 from models.decoding import decode
 from dataset.render_svg import render_layout_svg
-from evaluation.validators import enforce_min_separation, check_bounds
+from evaluation.validators import enforce_min_separation, clamp_bounds, validate_layout
 from evaluation.evaluate_sample import assert_room_counts, BoundaryViolationError
 from Generate.params import Params
 
@@ -285,22 +285,39 @@ def _worker():
                 layout_json = _tokenizer.decode_layout_tokens(layout_tokens)
                 if min_sep > 0:
                     layout_json = enforce_min_separation(layout_json, min_sep)
-                bounds = check_bounds(
-                    (layout_json.get("layout") or {}).get("rooms", []),
+
+                issues = validate_layout(
+                    layout_json,
                     max_width=max_w,
                     max_length=max_h,
+                    min_separation=min_sep,
                 )
-                if bounds:
+                if issues:
                     if attempt < max_attempts - 1:
-                        job["logs"].append("Boundary issues detected, retrying")
+                        job["logs"].append(
+                            f"Layout validation failed: {'; '.join(issues)}, retrying"
+                        )
                         job["event"].set()
                         continue
-                    raise BoundaryViolationError("; ".join(bounds))
+                    layout_json = clamp_bounds(layout_json, max_w, max_h)
+                    issues = validate_layout(
+                        layout_json,
+                        max_width=max_w,
+                        max_length=max_h,
+                        min_separation=min_sep,
+                    )
+                    if issues:
+                        raise BoundaryViolationError(
+                            "Layout validation failed: " + "; ".join(issues)
+                        )
+
                 missing = assert_room_counts(layout_json, raw_params)
                 if not missing:
                     break
                 if attempt < max_attempts - 1:
-                    job["logs"].append(f"Missing rooms { [m['room_type'] for m in missing] }, retrying")
+                    job["logs"].append(
+                        f"Missing rooms { [m['room_type'] for m in missing] }, retrying"
+                    )
                     job["event"].set()
                     continue
                 rooms = layout_json.setdefault("layout", {}).setdefault("rooms", [])
@@ -314,6 +331,18 @@ def _worker():
                             "size": {"width": int(wtok[1:]), "length": int(ltok[1:])},
                         }
                     )
+                layout_json = clamp_bounds(layout_json, max_w, max_h)
+                issues = validate_layout(
+                    layout_json,
+                    max_width=max_w,
+                    max_length=max_h,
+                    min_separation=min_sep,
+                )
+                if issues:
+                    raise BoundaryViolationError(
+                        "Layout validation failed after injecting placeholders: "
+                        + "; ".join(issues)
+                    )
                 break
 
             job["logs"].append("Rendering layout")
@@ -326,6 +355,8 @@ def _worker():
             svg_filename = f"{base}.svg"
             json_path = os.path.join(out_dir, json_filename)
             svg_path = os.path.join(out_dir, svg_filename)
+
+            layout_json = clamp_bounds(layout_json, max_w, max_h)
 
             with open(json_path, "w", encoding="utf-8") as f:
                 import json as pyjson

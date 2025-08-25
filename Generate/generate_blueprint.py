@@ -8,7 +8,7 @@ from models.layout_transformer import LayoutTransformer
 from tokenizer.tokenizer import BlueprintTokenizer
 from models.decoding import decode
 from dataset.render_svg import render_layout_svg
-from evaluation.validators import enforce_min_separation, clamp_bounds, check_bounds
+from evaluation.validators import enforce_min_separation, clamp_bounds, validate_layout
 from evaluation.evaluate_sample import assert_room_counts, BoundaryViolationError
 from Generate.params import Params
 
@@ -62,6 +62,10 @@ def main():
         room_counts[tk.token_to_id["GARAGE"]] = 1
         bias_tokens[tk.token_to_id["GARAGE"]] = 2.0
 
+    dims = raw.get("dimensions") or {}
+    max_w = float(dims.get("width", 40))
+    max_h = float(dims.get("depth", dims.get("height", 40)))
+
     max_attempts = 3
     layout_json = None
     missing = []
@@ -79,20 +83,32 @@ def main():
         layout_json = tk.decode_layout_tokens(layout_tokens)
         if args.min_separation > 0:
             layout_json = enforce_min_separation(layout_json, args.min_separation)
-        dims = raw.get("dimensions") or {}
-        max_w = float(dims.get("width", 40))
-        max_h = float(dims.get("depth", dims.get("height", 40)))
-        bounds = check_bounds(
-            (layout_json.get("layout") or {}).get("rooms", []),
+
+        issues = validate_layout(
+            layout_json,
             max_width=max_w,
             max_length=max_h,
+            min_separation=args.min_separation,
         )
-        if bounds:
+        if issues:
             if attempt < max_attempts - 1:
-                print("Boundary issues detected, regenerating...", file=sys.stderr)
+                print(
+                    f"Layout validation failed: {'; '.join(issues)}. Regenerating...",
+                    file=sys.stderr,
+                )
                 continue
-            raise BoundaryViolationError("; ".join(bounds))
-        layout_json = clamp_bounds(layout_json, max_w, max_h)
+            layout_json = clamp_bounds(layout_json, max_w, max_h)
+            issues = validate_layout(
+                layout_json,
+                max_width=max_w,
+                max_length=max_h,
+                min_separation=args.min_separation,
+            )
+            if issues:
+                raise BoundaryViolationError(
+                    "Layout validation failed after clamping: " + "; ".join(issues)
+                )
+
         missing = assert_room_counts(layout_json, raw)
         if not missing:
             break
@@ -114,10 +130,23 @@ def main():
                     "size": {"width": int(wtok[1:]), "length": int(ltok[1:])},
                 }
             )
+        layout_json = clamp_bounds(layout_json, max_w, max_h)
+        issues = validate_layout(
+            layout_json,
+            max_width=max_w,
+            max_length=max_h,
+            min_separation=args.min_separation,
+        )
+        if issues:
+            raise BoundaryViolationError(
+                "Layout validation failed after injecting placeholders: "
+                + "; ".join(issues)
+            )
         break
 
     json_path = f"{args.out_prefix}.json"
     svg_path = f"{args.out_prefix}.svg"
+    layout_json = clamp_bounds(layout_json, max_w, max_h)
     json.dump(layout_json, open(json_path, "w", encoding="utf-8"), indent=2)
     render_layout_svg(layout_json, svg_path)
     print(f"Wrote {json_path} and {svg_path}")
