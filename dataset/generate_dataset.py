@@ -40,16 +40,17 @@ def sample_parameters(i, rng=random):
 
 def random_layout(i, rng=random):
     """Generate a random layout with explicit x/y coordinates."""
-    # Restrict base/offset ranges so raw coordinates stay below MAX_COORD
-    base_x = rng.randint(0, 19)
-    base_y = rng.randint(0, 19)
+    # Choose a base anchor well within the canvas so rooms stay in-bounds.
+    base_x = rng.randint(0, 23)
+    base_y = rng.randint(0, 23)
     rooms = []
     for _ in range(rng.randint(3, 6)):
         room_type = rng.choice(ROOM_TYPES)
-        x = base_x + rng.randint(0, 19)
-        y = base_y + rng.randint(0, 19)
         width = rng.randint(8, 16)
         length = rng.randint(8, 16)
+        # Offsets are limited by remaining space so that x+width<=MAX_COORD
+        x = base_x + rng.randint(0, 16 - width)
+        y = base_y + rng.randint(0, 16 - length)
         rooms.append(
             {
                 "type": room_type,
