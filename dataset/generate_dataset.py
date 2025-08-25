@@ -20,6 +20,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from dataset.render_svg import render_layout_svg
 from dataset.augmentation import mirror_layout, rotate_layout
+from evaluation.validators import clamp_bounds, check_bounds, check_overlaps
 
 # Maximum width/height for any layout. Rooms will be scaled to fit within this
 # square coordinate space.
@@ -29,7 +30,15 @@ OUT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), 'datasets/synt
 
 STYLES = ["Craftsman", "Modern", "Colonial", "Ranch", "Mediterranean"]
 SIZES = ["small", "medium", "large"]
-ROOM_TYPES = ["Bedroom", "Bathroom", "Kitchen", "Living Room", "Dining Room", "Office"]
+ROOM_TYPES = [
+    "Bedroom",
+    "Bathroom",
+    "Kitchen",
+    "Living Room",
+    "Dining Room",
+    "Office",
+    "Garage",
+]
 
 
 def sample_parameters(i, rng=random):
@@ -51,26 +60,56 @@ def sample_parameters(i, rng=random):
     }
 
 
-def random_layout(i, rng=random):
-    """Generate a random layout with explicit x/y coordinates."""
-    # Choose a base anchor well within the canvas so rooms stay in-bounds.
-    base_x = rng.randint(0, 23)
-    base_y = rng.randint(0, 23)
-    rooms = []
-    for _ in range(rng.randint(3, 6)):
-        room_type = rng.choice(ROOM_TYPES)
-        width = rng.randint(8, 16)
-        length = rng.randint(8, 16)
-        # Offsets are limited by remaining space so that x+width<=MAX_COORD
-        x = base_x + rng.randint(0, 16 - width)
-        y = base_y + rng.randint(0, 16 - length)
-        rooms.append(
-            {
-                "type": room_type,
-                "position": {"x": x, "y": y},
-                "size": {"width": width, "length": length},
-            }
-        )
+def _place_room(rooms, room_type, rng, max_coord=MAX_COORD, max_attempts=100):
+    """Attempt to place a non-overlapping room on the canvas."""
+    for _ in range(max_attempts):
+        width = rng.randint(6, 12)
+        length = rng.randint(6, 12)
+        x = rng.randint(0, max_coord - width)
+        y = rng.randint(0, max_coord - length)
+        rect = (x, y, x + width, y + length)
+        overlap = False
+        for r in rooms:
+            rx, ry = r["position"]["x"], r["position"]["y"]
+            rw, rl = r["size"]["width"], r["size"]["length"]
+            if x < rx + rw and x + width > rx and y < ry + rl and y + length > ry:
+                overlap = True
+                break
+        if not overlap:
+            rooms.append(
+                {
+                    "type": room_type,
+                    "position": {"x": x, "y": y},
+                    "size": {"width": width, "length": length},
+                }
+            )
+            return True
+    return False
+
+
+def random_layout(i, params, rng=random):
+    """Generate a random layout matching requested room counts."""
+    rooms: list[dict] = []
+
+    bed_count = int(params.get("bedrooms", 0))
+    baths = params.get("bathrooms") or {}
+    bath_count = int(baths.get("full", 0)) + int(baths.get("half", 0))
+    garage_needed = 1 if params.get("garage") else 0
+
+    for _ in range(bed_count):
+        if not _place_room(rooms, "Bedroom", rng):
+            raise ValueError("Could not place all bedrooms")
+    for _ in range(bath_count):
+        if not _place_room(rooms, "Bathroom", rng):
+            raise ValueError("Could not place all bathrooms")
+    for _ in range(garage_needed):
+        if not _place_room(rooms, "Garage", rng):
+            raise ValueError("Could not place garage")
+
+    extra_types = [r for r in ROOM_TYPES if r not in {"Bedroom", "Bathroom", "Garage"}]
+    for _ in range(rng.randint(0, 3)):
+        _place_room(rooms, rng.choice(extra_types), rng)
+
     return {"layout": {"rooms": rooms}}
 
 
@@ -94,8 +133,9 @@ def _scale_layout(layout, max_width=MAX_COORD, max_height=MAX_COORD):
 
 
 def validate_layout(layout, max_width=MAX_COORD, max_height=MAX_COORD):
-    """Ensure rooms have coordinates and respect the bounding box."""
-    for idx, room in enumerate(layout.get("layout", {}).get("rooms", [])):
+    """Ensure rooms have coordinates, do not overlap, and respect the bounds."""
+    rooms = layout.get("layout", {}).get("rooms", [])
+    for idx, room in enumerate(rooms):
         pos = room.get("position")
         size = room.get("size", {})
         if not isinstance(pos, dict) or "x" not in pos or "y" not in pos:
@@ -107,6 +147,9 @@ def validate_layout(layout, max_width=MAX_COORD, max_height=MAX_COORD):
             raise ValueError(f"Room {idx} position out of bounds")
         if x + width > max_width or y + length > max_height:
             raise ValueError(f"Room {idx} exceeds layout bounds")
+    overlaps = check_overlaps(rooms)
+    if overlaps:
+        raise ValueError(overlaps[0])
 
 
 def ingest_external_dataset(external_dir, out_dir=OUT_DIR, start_index=0, augment=False):
@@ -143,7 +186,14 @@ def ingest_external_dataset(external_dir, out_dir=OUT_DIR, start_index=0, augmen
         idx += 1
         if augment:
             for aug_layout in (mirror_layout(layout), rotate_layout(layout)):
-                _write_sample(params, aug_layout, out_dir, idx)
+                aug_layout = clamp_bounds(aug_layout, max_width=MAX_COORD, max_length=MAX_COORD)
+                rooms = (aug_layout.get("layout") or {}).get("rooms", [])
+                if check_bounds(rooms) or check_overlaps(rooms):
+                    continue
+                try:
+                    _write_sample(params, aug_layout, out_dir, idx)
+                except ValueError:
+                    continue
                 idx += 1
     return idx - start_index
 
@@ -172,12 +222,22 @@ def main(n=50, out_dir=OUT_DIR, external_dir=None, seed=None, augment=False):
     idx = 0
     for _ in range(n):
         params = sample_parameters(idx, rng)
-        layout = random_layout(idx, rng)
+        try:
+            layout = random_layout(idx, params, rng)
+        except ValueError:
+            continue
         _write_sample(params, layout, out_dir, idx)
         idx += 1
         if augment:
             for aug_layout in (mirror_layout(layout), rotate_layout(layout)):
-                _write_sample(params, aug_layout, out_dir, idx)
+                aug_layout = clamp_bounds(aug_layout, max_width=MAX_COORD, max_length=MAX_COORD)
+                rooms = (aug_layout.get("layout") or {}).get("rooms", [])
+                if check_bounds(rooms) or check_overlaps(rooms):
+                    continue
+                try:
+                    _write_sample(params, aug_layout, out_dir, idx)
+                except ValueError:
+                    continue
                 idx += 1
 
     if external_dir:
