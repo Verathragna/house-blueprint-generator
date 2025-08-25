@@ -8,7 +8,7 @@ from models.layout_transformer import LayoutTransformer
 from tokenizer.tokenizer import BlueprintTokenizer
 from models.decoding import decode
 from dataset.render_svg import render_layout_svg
-from evaluation.validators import enforce_min_separation
+from evaluation.validators import enforce_min_separation, clamp_bounds
 from evaluation.evaluate_sample import assert_room_counts
 from Generate.params import Params
 
@@ -79,6 +79,10 @@ def main():
         layout_json = tk.decode_layout_tokens(layout_tokens)
         if args.min_separation > 0:
             layout_json = enforce_min_separation(layout_json, args.min_separation)
+        dims = raw.get("dimensions") or {}
+        max_w = float(dims.get("width", 40))
+        max_h = float(dims.get("depth", dims.get("height", 40)))
+        layout_json = clamp_bounds(layout_json, max_w, max_h)
         missing = assert_room_counts(layout_json, raw)
         if not missing:
             break
