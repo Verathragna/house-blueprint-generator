@@ -2,9 +2,14 @@ import argparse
 import json
 import os
 import random
+import sys
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from tokenizer.tokenizer import BlueprintTokenizer
 from dataset.augmentation import mirror_layout, rotate_layout
+
+MAX_COORD = 40
 
 try:
     import numpy as np
@@ -19,6 +24,19 @@ if np is not None:
 else:
     torch = None
 
+
+def _check_bounds(layout, max_coord: int = MAX_COORD) -> None:
+    for idx, room in enumerate(layout.get("layout", {}).get("rooms", [])):
+        pos = room.get("position", {})
+        size = room.get("size", {})
+        x, y = pos.get("x"), pos.get("y")
+        width, length = size.get("width", 0), size.get("length", 0)
+        if any(v is None for v in (x, y, width, length)):
+            raise ValueError(f"Room {idx} missing coordinate fields")
+        if not (0 <= x <= max_coord and 0 <= y <= max_coord):
+            raise ValueError(f"Room {idx} position out of range")
+        if x + width > max_coord or y + length > max_coord:
+            raise ValueError(f"Room {idx} exceeds {max_coord}x{max_coord} bounds")
 
 def main(seed: int = 42, augment: bool = False) -> None:
     random.seed(seed)
@@ -42,16 +60,13 @@ def main(seed: int = 42, augment: bool = False) -> None:
         lp = os.path.join(in_dir, f"layout_{idx}.json")
         if os.path.exists(lp):
             layout = json.load(open(lp, "r", encoding="utf-8"))
-            # ensure all rooms contain coordinate fields
-            for room in layout.get("layout", {}).get("rooms", []):
-                room.setdefault("position", {"x": 0, "y": 0})
+            _check_bounds(layout)
             x_ids, y_ids = tk.build_training_pair(inp, layout)
             pairs.append({"params": inp, "layout": layout, "x": x_ids, "y": y_ids})
 
             if augment:
                 for aug_layout in (mirror_layout(layout), rotate_layout(layout)):
-                    for room in aug_layout.get("layout", {}).get("rooms", []):
-                        room.setdefault("position", {"x": 0, "y": 0})
+                    _check_bounds(aug_layout)
                     ax, ay = tk.build_training_pair(inp, aug_layout)
                     pairs.append({"params": inp, "layout": aug_layout, "x": ax, "y": ay})
 
