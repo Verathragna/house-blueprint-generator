@@ -8,6 +8,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from tokenizer.tokenizer import BlueprintTokenizer
 from dataset.augmentation import mirror_layout, rotate_layout
+from evaluation.validators import check_overlaps
 
 MAX_COORD = 40
 
@@ -29,6 +30,7 @@ def _validate_layout(
     layout: dict,
     enforce_bounds: bool = True,
     max_coord: int = MAX_COORD,
+    strict: bool = False,
 ) -> None:
     """Ensure every room specifies an ``x`` and ``y`` position.
 
@@ -53,8 +55,17 @@ def _validate_layout(
                 raise ValueError(
                     f"Room {idx} exceeds bounds: x={x}, width={w}, y={y}, length={l}, max={max_coord}"
                 )
+    if strict:
+        issues = check_overlaps((layout.get("layout") or {}).get("rooms", []))
+        if issues:
+            raise ValueError(issues[0])
 
-def main(seed: int = 42, augment: bool = False, check_bounds: bool = True) -> None:
+def main(
+    seed: int = 42,
+    augment: bool = False,
+    check_bounds: bool = True,
+    strict: bool = False,
+) -> None:
     random.seed(seed)
     if np is not None:
         np.random.seed(seed)
@@ -76,13 +87,13 @@ def main(seed: int = 42, augment: bool = False, check_bounds: bool = True) -> No
         lp = os.path.join(in_dir, f"layout_{idx}.json")
         if os.path.exists(lp):
             layout = json.load(open(lp, "r", encoding="utf-8"))
-            _validate_layout(layout, enforce_bounds=check_bounds)
+            _validate_layout(layout, enforce_bounds=check_bounds, strict=strict)
             x_ids, y_ids = tk.build_training_pair(inp, layout)
             pairs.append({"params": inp, "layout": layout, "x": x_ids, "y": y_ids})
 
             if augment:
                 for aug_layout in (mirror_layout(layout), rotate_layout(layout)):
-                    _validate_layout(aug_layout, enforce_bounds=check_bounds)
+                    _validate_layout(aug_layout, enforce_bounds=check_bounds, strict=strict)
                     ax, ay = tk.build_training_pair(inp, aug_layout)
                     pairs.append({"params": inp, "layout": aug_layout, "x": ax, "y": ay})
 
@@ -121,5 +132,15 @@ if __name__ == "__main__":
         action="store_true",
         help=f"Allow room positions outside the [0, {MAX_COORD}] range",
     )
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="Fail if any boundary or overlap issues are detected",
+    )
     args = parser.parse_args()
-    main(args.seed, augment=args.augment, check_bounds=not args.skip_bounds_check)
+    main(
+        args.seed,
+        augment=args.augment,
+        check_bounds=not args.skip_bounds_check,
+        strict=args.strict,
+    )

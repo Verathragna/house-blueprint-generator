@@ -12,7 +12,7 @@ def test_generated_dataset_has_coordinates(tmp_path, monkeypatch):
     monkeypatch.setattr(gd, "render_layout_svg", dummy_render)
     out_dir = tmp_path / "synthetic"
 
-    gd.main(n=5, out_dir=str(out_dir), seed=0)
+    gd.main(n=5, out_dir=str(out_dir), seed=0, strict=True)
 
     coords = set()
     for layout_file in out_dir.glob("layout_*.json"):
@@ -39,7 +39,7 @@ def test_external_ingestion(tmp_path, monkeypatch):
     (external_dir / "plan.json").write_text(json.dumps(sample))
 
     out_dir = tmp_path / "synthetic"
-    gd.main(n=0, external_dir=str(external_dir), out_dir=str(out_dir), seed=0)
+    gd.main(n=0, external_dir=str(external_dir), out_dir=str(out_dir), seed=0, strict=True)
 
     layout_file = next(out_dir.glob("layout_*.json"))
     data = json.loads(layout_file.read_text())
@@ -63,7 +63,7 @@ def test_external_ingestion_with_position(tmp_path, monkeypatch):
     (external_dir / "plan.json").write_text(json.dumps(sample))
 
     out_dir = tmp_path / "synthetic"
-    gd.main(n=0, external_dir=str(external_dir), out_dir=str(out_dir), seed=0)
+    gd.main(n=0, external_dir=str(external_dir), out_dir=str(out_dir), seed=0, strict=True)
 
     layout_file = next(out_dir.glob("layout_*.json"))
     data = json.loads(layout_file.read_text())

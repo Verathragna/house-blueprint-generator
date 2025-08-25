@@ -24,11 +24,11 @@ from dataset.render_svg import render_layout_svg
 from evaluation.validators import validate_layout, check_bounds
 
 
-class BoundaryViolationError(RuntimeError):
-    """Raised when a room falls outside the allowed layout bounds."""
-
-
 log = logging.getLogger(__name__)
+
+
+class BoundaryViolationError(ValueError):
+    """Raised when a room falls outside the allowed layout bounds."""
 
 
 def assert_room_counts(layout: dict, params: dict) -> list[dict]:
@@ -105,6 +105,11 @@ def main() -> None:
         action="store_true",
         help="Exit with a non-zero status if any validation issues are found",
     )
+    ap.add_argument(
+        "--json-report",
+        help="Optional path to write a JSON summary of detected issues",
+        default=None,
+    )
     args = ap.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
@@ -139,14 +144,18 @@ def main() -> None:
 
     all_issues = bounds_issues + issues
 
+    if args.json_report:
+        summary = {"bounds_issues": bounds_issues, "other_issues": issues}
+        with open(args.json_report, "w", encoding="utf-8") as jf:
+            json.dump(summary, jf, indent=2)
+        log.info("Wrote JSON report to %s", Path(args.json_report).resolve())
+
     if all_issues:
         log_func = log.error if args.strict else log.warning
         for msg in all_issues:
             log_func(msg)
         if args.strict:
-            if bounds_issues:
-                raise BoundaryViolationError("; ".join(all_issues))
-            raise RuntimeError("; ".join(all_issues))
+            raise ValueError("; ".join(all_issues))
     else:
         log.info("No issues detected")
 
