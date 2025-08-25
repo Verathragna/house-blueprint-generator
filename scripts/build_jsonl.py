@@ -98,7 +98,10 @@ if __name__ == "__main__":
         "--seed",
         type=int,
         default=42,
-        help="Random seed for shuffling and any libraries in use.",
+        help=(
+            "Random seed for shuffling and any libraries in use. "
+            "Should match the dataset generation seed for full reproducibility."
+        ),
     )
     parser.add_argument(
         "--augment",

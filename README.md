@@ -19,11 +19,11 @@ Synthetic layouts are produced with parameter files in `dataset/params/` and
 converted into paired JSONL records for training. Run:
 
 ```bash
-python dataset/generate_dataset.py                 # create JSON + SVG pairs
+python dataset/generate_dataset.py --seed 42       # create JSON + SVG pairs
 python scripts/build_jsonl.py --seed 42            # shuffle into train/val splits
 ```
 
-The optional `--seed` flag ensures reproducible shuffling.
+Use the same `--seed` value for both commands to ensure full reproducibility.
 
 All layouts are scaled to fit within a 40×40 coordinate space. Rooms whose
 positions or dimensions would exceed these bounds are scaled down before being
