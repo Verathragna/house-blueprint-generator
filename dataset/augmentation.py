@@ -5,11 +5,17 @@ MAX_COORD = 40
 
 
 def _clamp_rooms(rooms, max_coord: int = MAX_COORD) -> None:
+    """Clamp rooms to the canvas; drop any that cannot fit."""
+    clamped = []
     for r in rooms:
         w = r["size"]["width"]
         l = r["size"]["length"]
+        if w > max_coord or l > max_coord:
+            continue
         r["position"]["x"] = max(0, min(r["position"]["x"], max_coord - w))
         r["position"]["y"] = max(0, min(r["position"]["y"], max_coord - l))
+        clamped.append(r)
+    rooms[:] = clamped
 
 
 def mirror_layout(layout: Dict) -> Dict:
