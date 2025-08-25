@@ -75,6 +75,7 @@ def train(
     hidden_size=128,
     device="cpu",
     resume=None,
+    save_weights=False,
 ):
     tk = BlueprintTokenizer()
     vocab_size = tk.get_vocab_size()
@@ -147,6 +148,8 @@ def train(
             list_and_cleanup(keep_last_n=3)
             ckpt_path = os.path.join(CHECKPOINT_DIR, f"epoch_{ep}.pt")
             torch.save({"model": model.state_dict(), "optimizer": opt.state_dict(), "epoch": ep}, ckpt_path)
+            if save_weights:
+                torch.save(model.state_dict(), os.path.join(CHECKPOINT_DIR, "model_latest.pth"))
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
@@ -157,6 +160,7 @@ if __name__ == "__main__":
     ap.add_argument("--learning_rate", type=float, default=1e-4)
     ap.add_argument("--device", type=str, default="cpu")
     ap.add_argument("--resume", type=str, default=None, help="path to checkpoint to resume from")
+    ap.add_argument("--save_weights", action="store_true", help="also save latest model weights to model_latest.pth")
     args = ap.parse_args()
     train(
         args.epochs,
@@ -166,4 +170,5 @@ if __name__ == "__main__":
         args.hidden_size,
         args.device,
         args.resume,
+        args.save_weights,
     )

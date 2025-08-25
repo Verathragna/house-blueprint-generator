@@ -46,7 +46,8 @@ def main():
     model = LayoutTransformer(tk.get_vocab_size())
     if not os.path.exists(CKPT):
         raise FileNotFoundError("Checkpoint not found. Train first (checkpoints/model_latest.pth).")
-    model.load_state_dict(torch.load(CKPT, map_location=args.device))
+    ckpt = torch.load(CKPT, map_location=args.device)
+    model.load_state_dict(ckpt["model"] if "model" in ckpt else ckpt)
     model.to(args.device)
 
     prefix = tk.encode_params(params.model_dump())
