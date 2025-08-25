@@ -46,6 +46,7 @@ def test_generate_blueprint_device_flag(dummy_checkpoint, monkeypatch, tmp_path)
     # patch model and rendering
     monkeypatch.setattr(gb, "LayoutTransformer", DummyModel)
     monkeypatch.setattr(gb, "render_layout_svg", dummy_render)
+    monkeypatch.setattr(gb, "assert_room_counts", lambda layout, params: None)
 
     out_prefix = tmp_path / "output"
     argv = [
