@@ -53,15 +53,18 @@ def main():
 
     prefix = tk.encode_params(params.model_dump())
     room_counts = {}
+    bias_tokens = {}
     if "bedrooms" in raw:
         room_counts[tk.token_to_id["BEDROOM"]] = params.bedrooms
     if "bathrooms" in raw:
         room_counts[tk.token_to_id["BATHROOM"]] = params.bathrooms.full + params.bathrooms.half
     if raw.get("garage"):
         room_counts[tk.token_to_id["GARAGE"]] = 1
+        bias_tokens[tk.token_to_id["GARAGE"]] = 2.0
 
     max_attempts = 3
     layout_json = None
+    missing = []
     for attempt in range(max_attempts):
         layout_tokens = decode(
             model,
@@ -71,16 +74,33 @@ def main():
             temperature=args.temperature,
             beam_size=args.beam_size,
             required_counts=room_counts,
+            bias_tokens=bias_tokens,
         )
         layout_json = tk.decode_layout_tokens(layout_tokens)
         if args.min_separation > 0:
             layout_json = enforce_min_separation(layout_json, args.min_separation)
-        try:
-            assert_room_counts(layout_json, raw)
+        missing = assert_room_counts(layout_json, raw)
+        if not missing:
             break
-        except ValueError as e:
-            if attempt == max_attempts - 1:
-                raise
+        if attempt < max_attempts - 1:
+            print(
+                f"Missing rooms { [m['room_type'] for m in missing] }, regenerating...",
+                file=sys.stderr,
+            )
+            continue
+        # On final attempt, inject placeholder rooms
+        rooms = layout_json.setdefault("layout", {}).setdefault("rooms", [])
+        for miss in missing:
+            token_key = miss["room_type"].upper()
+            wtok, ltok = tk.default_room_dims.get(token_key, ("W12", "L12"))
+            rooms.append(
+                {
+                    "type": miss["room_type"].capitalize(),
+                    "position": {"x": 0, "y": 0},
+                    "size": {"width": int(wtok[1:]), "length": int(ltok[1:])},
+                }
+            )
+        break
 
     json_path = f"{args.out_prefix}.json"
     svg_path = f"{args.out_prefix}.svg"

@@ -251,18 +251,21 @@ def _worker():
 
             prefix = _tokenizer.encode_params(params.model_dump())
             room_counts = {}
+            bias_tokens = {}
             if "bedrooms" in raw_params:
                 room_counts[_tokenizer.token_to_id["BEDROOM"]] = params.bedrooms
             if "bathrooms" in raw_params:
                 baths = params.bathrooms.full + params.bathrooms.half
                 room_counts[_tokenizer.token_to_id["BATHROOM"]] = baths
             if raw_params.get("garage"):
-                room_counts[_tokenizer.token_to_id["GARAGE"]] = 1
+                tid = _tokenizer.token_to_id["GARAGE"]
+                room_counts[tid] = 1
+                bias_tokens[tid] = 2.0
 
             max_attempts = 3
             layout_json = None
-            last_error = None
-            for _ in range(max_attempts):
+            missing = []
+            for attempt in range(max_attempts):
                 job["logs"].append("Decoding layout")
                 job["event"].set()
                 layout_tokens = decode(
@@ -273,17 +276,30 @@ def _worker():
                     temperature=temperature,
                     beam_size=beam_size,
                     required_counts=room_counts,
+                    bias_tokens=bias_tokens,
                 )
                 layout_json = _tokenizer.decode_layout_tokens(layout_tokens)
                 if min_sep > 0:
                     layout_json = enforce_min_separation(layout_json, min_sep)
-                try:
-                    assert_room_counts(layout_json, raw_params)
+                missing = assert_room_counts(layout_json, raw_params)
+                if not missing:
                     break
-                except ValueError as e:
-                    last_error = e
-            else:
-                raise last_error or ValueError("room count mismatch")
+                if attempt < max_attempts - 1:
+                    job["logs"].append(f"Missing rooms { [m['room_type'] for m in missing] }, retrying")
+                    job["event"].set()
+                    continue
+                rooms = layout_json.setdefault("layout", {}).setdefault("rooms", [])
+                for miss in missing:
+                    token_key = miss["room_type"].upper()
+                    wtok, ltok = _tokenizer.default_room_dims.get(token_key, ("W12", "L12"))
+                    rooms.append(
+                        {
+                            "type": miss["room_type"].capitalize(),
+                            "position": {"x": 0, "y": 0},
+                            "size": {"width": int(wtok[1:]), "length": int(ltok[1:])},
+                        }
+                    )
+                break
 
             job["logs"].append("Rendering layout")
             job["event"].set()

@@ -10,24 +10,27 @@ import torch
 from tokenizer.tokenizer import SEP_ID, EOS_ID
 
 
-def _apply_room_bias(logits, counts, required_counts, bias=5.0):
+def _apply_room_bias(logits, counts, required_counts, bias=5.0, extra_bias=None):
     """Apply biases or constraints for room token counts.
 
     ``counts`` tracks how many times a room token has been generated so far.
     ``required_counts`` maps token ids to the desired total count. Once the
     desired count for a token is met, its logit is set to ``-inf`` to prevent
     further occurrences. Tokens still required receive a positive ``bias`` to
-    encourage their selection.
+    encourage their selection. ``extra_bias`` can be used to nudge specific
+    tokens regardless of count constraints.
     """
 
-    if not required_counts:
-        return logits
-    for tid, req in required_counts.items():
-        seen = counts.get(tid, 0)
-        if seen >= req:
-            logits[..., tid] = -float("inf")
-        else:
-            logits[..., tid] += bias
+    if required_counts:
+        for tid, req in required_counts.items():
+            seen = counts.get(tid, 0)
+            if seen >= req:
+                logits[..., tid] = -float("inf")
+            else:
+                logits[..., tid] += bias
+    if extra_bias:
+        for tid, b in extra_bias.items():
+            logits[..., tid] += b
     return logits
 
 
@@ -39,7 +42,7 @@ def _trim_sequence(seq):
     return seq
 
 
-def greedy_decode(model, prefix_ids, max_len: int = 160, required_counts=None):
+def greedy_decode(model, prefix_ids, max_len: int = 160, required_counts=None, bias_tokens=None):
     """Generate tokens using greedy argmax decoding."""
     model.eval()
     seq = list(prefix_ids)
@@ -49,7 +52,7 @@ def greedy_decode(model, prefix_ids, max_len: int = 160, required_counts=None):
         for _ in range(max_len):
             x = torch.tensor([seq], dtype=torch.long, device=device)
             logits = model(x)[:, -1, :]
-            logits = _apply_room_bias(logits, counts, required_counts)
+            logits = _apply_room_bias(logits, counts, required_counts, extra_bias=bias_tokens)
             nxt = int(logits.argmax(dim=-1))
             seq.append(nxt)
             if nxt in counts:
@@ -65,6 +68,7 @@ def sample_decode(
     max_len: int = 160,
     temperature: float = 1.0,
     required_counts=None,
+    bias_tokens=None,
 ):
     """Generate tokens using temperature sampling.
 
@@ -81,7 +85,7 @@ def sample_decode(
         for _ in range(max_len):
             x = torch.tensor([seq], dtype=torch.long, device=device)
             logits = model(x)[:, -1, :] / temperature
-            logits = _apply_room_bias(logits, counts, required_counts)
+            logits = _apply_room_bias(logits, counts, required_counts, extra_bias=bias_tokens)
             probs = torch.softmax(logits, dim=-1)
             nxt = int(torch.multinomial(probs, num_samples=1))
             seq.append(nxt)
@@ -98,6 +102,7 @@ def beam_search_decode(
     max_len: int = 160,
     beam_size: int = 5,
     required_counts=None,
+    bias_tokens=None,
 ):
     """Generate tokens using beam search.
 
@@ -115,7 +120,7 @@ def beam_search_decode(
             for seq, score, cnts in sequences:
                 x = torch.tensor([seq], dtype=torch.long, device=device)
                 logits = model(x)[:, -1, :]
-                logits = _apply_room_bias(logits, cnts, required_counts)
+                logits = _apply_room_bias(logits, cnts, required_counts, extra_bias=bias_tokens)
                 log_probs = torch.log_softmax(logits, dim=-1)
                 topk_log_probs, topk_ids = torch.topk(log_probs, beam_size)
                 for log_prob, idx in zip(topk_log_probs[0], topk_ids[0]):
@@ -140,6 +145,7 @@ def decode(
     temperature: float = 1.0,
     beam_size: int = 5,
     required_counts=None,
+    bias_tokens=None,
 ):
     """Unified decoding interface.
 
@@ -149,9 +155,9 @@ def decode(
         beam_size: Beam width used when ``strategy=='beam'``.
     """
     if strategy == "greedy":
-        return greedy_decode(model, prefix_ids, max_len, required_counts)
+        return greedy_decode(model, prefix_ids, max_len, required_counts, bias_tokens)
     if strategy == "sample":
-        return sample_decode(model, prefix_ids, max_len, temperature, required_counts)
+        return sample_decode(model, prefix_ids, max_len, temperature, required_counts, bias_tokens)
     if strategy == "beam":
-        return beam_search_decode(model, prefix_ids, max_len, beam_size, required_counts)
+        return beam_search_decode(model, prefix_ids, max_len, beam_size, required_counts, bias_tokens)
     raise ValueError(f"Unknown decoding strategy: {strategy}")

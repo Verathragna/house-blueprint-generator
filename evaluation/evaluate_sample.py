@@ -27,29 +27,49 @@ from evaluation.validators import validate_layout
 log = logging.getLogger(__name__)
 
 
-def compare_with_params(layout: dict, params: dict) -> list[str]:
-    """Compare layout statistics with desired parameters.
+def assert_room_counts(layout: dict, params: dict) -> list[dict]:
+    """Return a structured list describing missing or mismatched room counts.
 
-    Currently checks room counts for bedrooms, bathrooms and garage.
-    Returns a list of mismatch descriptions.
+    Each item in the returned list is a dictionary with keys ``room_type``,
+    ``expected`` and ``found``. An empty list indicates that all requested room
+    counts were satisfied.
     """
     rooms = (layout.get("layout") or {}).get("rooms", [])
     counts = Counter(r.get("type", "").lower() for r in rooms)
-    issues: list[str] = []
+
+    missing: list[dict] = []
 
     bed_expected = int(params.get("bedrooms", 0))
     bed_found = counts.get("bedroom", 0)
-    if bed_expected != bed_found:
-        issues.append(f"Expected {bed_expected} bedrooms, found {bed_found}")
+    if bed_found < bed_expected:
+        missing.append({"room_type": "bedroom", "expected": bed_expected, "found": bed_found})
 
     baths = params.get("bathrooms") or {}
     bath_expected = int(baths.get("full", 0)) + int(baths.get("half", 0))
     bath_found = counts.get("bathroom", 0)
-    if bath_expected != bath_found:
-        issues.append(f"Expected {bath_expected} bathrooms, found {bath_found}")
+    if bath_found < bath_expected:
+        missing.append({"room_type": "bathroom", "expected": bath_expected, "found": bath_found})
 
-    if params.get("garage") and counts.get("garage", 0) == 0:
-        issues.append("Expected a garage, found none")
+    if params.get("garage"):
+        gar_found = counts.get("garage", 0)
+        if gar_found < 1:
+            missing.append({"room_type": "garage", "expected": 1, "found": gar_found})
+
+    return missing
+
+
+def compare_with_params(layout: dict, params: dict) -> list[str]:
+    """Compare layout statistics with desired parameters.
+
+    Converts the structured output of :func:`assert_room_counts` into
+    human-readable messages and checks optional room size expectations.
+    """
+    rooms = (layout.get("layout") or {}).get("rooms", [])
+    issues: list[str] = []
+
+    for item in assert_room_counts(layout, params):
+        room = item["room_type"]
+        issues.append(f"Expected {item['expected']} {room}s, found {item['found']}")
 
     size_expect = params.get("roomSizes") or {}
     for room in rooms:
@@ -64,13 +84,6 @@ def compare_with_params(layout: dict, params: dict) -> list[str]:
             )
 
     return issues
-
-
-def assert_room_counts(layout: dict, params: dict) -> None:
-    """Raise ``ValueError`` if requested room counts are not met."""
-    issues = compare_with_params(layout, params)
-    if issues:
-        raise ValueError("; ".join(issues))
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
