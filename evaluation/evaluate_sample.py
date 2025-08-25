@@ -24,6 +24,10 @@ from dataset.render_svg import render_layout_svg
 from evaluation.validators import validate_layout, check_bounds
 
 
+class BoundaryViolationError(RuntimeError):
+    """Raised when a room falls outside the allowed layout bounds."""
+
+
 log = logging.getLogger(__name__)
 
 
@@ -123,7 +127,7 @@ def main() -> None:
     if bounds_issues and args.strict:
         for msg in bounds_issues:
             log.error(msg)
-        sys.exit(1)
+        raise BoundaryViolationError("; ".join(bounds_issues))
 
     issues = validate_layout(
         layout,
@@ -141,4 +145,8 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except BoundaryViolationError as exc:
+        log.error("%s", exc)
+        sys.exit(1)

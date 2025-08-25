@@ -29,8 +29,8 @@ from tokenizer.tokenizer import BlueprintTokenizer
 from models.layout_transformer import LayoutTransformer
 from models.decoding import decode
 from dataset.render_svg import render_layout_svg
-from evaluation.validators import enforce_min_separation
-from evaluation.evaluate_sample import assert_room_counts
+from evaluation.validators import enforce_min_separation, check_bounds
+from evaluation.evaluate_sample import assert_room_counts, BoundaryViolationError
 from Generate.params import Params
 
 CHECKPOINT = os.path.join(REPO_ROOT, "checkpoints", "model_latest.pth")
@@ -262,6 +262,10 @@ def _worker():
                 room_counts[tid] = 1
                 bias_tokens[tid] = 2.0
 
+            dims = raw_params.get("dimensions") or {}
+            max_w = float(dims.get("width", 40))
+            max_h = float(dims.get("depth", dims.get("height", 40)))
+
             max_attempts = 3
             layout_json = None
             missing = []
@@ -281,6 +285,17 @@ def _worker():
                 layout_json = _tokenizer.decode_layout_tokens(layout_tokens)
                 if min_sep > 0:
                     layout_json = enforce_min_separation(layout_json, min_sep)
+                bounds = check_bounds(
+                    (layout_json.get("layout") or {}).get("rooms", []),
+                    max_width=max_w,
+                    max_length=max_h,
+                )
+                if bounds:
+                    if attempt < max_attempts - 1:
+                        job["logs"].append("Boundary issues detected, retrying")
+                        job["event"].set()
+                        continue
+                    raise BoundaryViolationError("; ".join(bounds))
                 missing = assert_room_counts(layout_json, raw_params)
                 if not missing:
                     break
