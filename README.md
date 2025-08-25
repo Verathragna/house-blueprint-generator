@@ -67,6 +67,11 @@ Run local generation on CPU or GPU by setting the `--device` flag:
 python Generate/generate_blueprint.py --params_json sample_params.json --out_prefix my_blueprint --device cuda
 ```
 
+Decoding runs `validate_layout` after each attempt to ensure rooms stay within
+the requested bounds. If any room exceeds the canvas, the script retries up to
+`--max_attempts` times before clamping positions and dimensions. Increase this
+value for higher accuracy at the cost of additional compute.
+
 ### API
 
 Serve the model via FastAPI. The `DEVICE` environment variable controls whether

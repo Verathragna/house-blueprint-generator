@@ -281,16 +281,17 @@ def _worker():
                     beam_size=beam_size,
                     required_counts=room_counts,
                     bias_tokens=bias_tokens,
+                    tokenizer=_tokenizer,
+                    max_width=max_w,
+                    max_length=max_h,
                 )
                 layout_json = _tokenizer.decode_layout_tokens(layout_tokens)
-                if min_sep > 0:
-                    layout_json = enforce_min_separation(layout_json, min_sep)
 
                 issues = validate_layout(
                     layout_json,
                     max_width=max_w,
                     max_length=max_h,
-                    min_separation=min_sep,
+                    min_separation=0,
                 )
                 if issues:
                     if attempt < max_attempts - 1:
@@ -304,12 +305,39 @@ def _worker():
                         layout_json,
                         max_width=max_w,
                         max_length=max_h,
-                        min_separation=min_sep,
+                        min_separation=0,
                     )
                     if issues:
                         raise BoundaryViolationError(
                             "Layout validation failed: " + "; ".join(issues)
                         )
+
+                if min_sep > 0:
+                    layout_json = enforce_min_separation(layout_json, min_sep)
+                    issues = validate_layout(
+                        layout_json,
+                        max_width=max_w,
+                        max_length=max_h,
+                        min_separation=min_sep,
+                    )
+                    if issues:
+                        if attempt < max_attempts - 1:
+                            job["logs"].append(
+                                f"Layout validation failed: {'; '.join(issues)}, retrying"
+                            )
+                            job["event"].set()
+                            continue
+                        layout_json = clamp_bounds(layout_json, max_w, max_h)
+                        issues = validate_layout(
+                            layout_json,
+                            max_width=max_w,
+                            max_length=max_h,
+                            min_separation=min_sep,
+                        )
+                        if issues:
+                            raise BoundaryViolationError(
+                                "Layout validation failed: " + "; ".join(issues)
+                            )
 
                 missing = assert_room_counts(layout_json, raw_params)
                 if not missing:
