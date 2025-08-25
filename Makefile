@@ -1,8 +1,8 @@
 PY=python
 
 data:
-	$(PY) dataset/generate_dataset.py
-	$(PY) scripts/build_jsonl.py
+	$(PY) dataset/generate_dataset.py --strict
+	$(PY) scripts/build_jsonl.py --strict
 
 train:
 	$(PY) training/train.py --epochs 20 --batch 16

@@ -152,7 +152,13 @@ def validate_layout(layout, max_width=MAX_COORD, max_height=MAX_COORD):
         raise ValueError(overlaps[0])
 
 
-def ingest_external_dataset(external_dir, out_dir=OUT_DIR, start_index=0, augment=False):
+def ingest_external_dataset(
+    external_dir,
+    out_dir=OUT_DIR,
+    start_index=0,
+    augment=False,
+    strict=False,
+):
     """Ingest external floor-plan JSON files and normalize to internal schema."""
     idx = start_index
     for fname in sorted(os.listdir(external_dir)):
@@ -171,11 +177,13 @@ def ingest_external_dataset(external_dir, out_dir=OUT_DIR, start_index=0, augmen
             if x is None or y is None:
                 raise ValueError(f"Room missing coordinates in {fname}")
             size = {"width": room.get("width", 10), "length": room.get("length", 10)}
-            rooms.append({
-                "type": room.get("type", "Room"),
-                "position": {"x": x, "y": y},
-                "size": size,
-            })
+            rooms.append(
+                {
+                    "type": room.get("type", "Room"),
+                    "position": {"x": x, "y": y},
+                    "size": size,
+                }
+            )
 
         layout = {"layout": {"rooms": rooms}}
         params = data.get(
@@ -185,17 +193,24 @@ def ingest_external_dataset(external_dir, out_dir=OUT_DIR, start_index=0, augmen
         try:
             _write_sample(params, layout, out_dir, idx)
         except ValueError:
+            if strict:
+                raise
             continue
         idx += 1
         if augment:
             for aug_layout in (mirror_layout(layout), rotate_layout(layout)):
                 aug_layout = clamp_bounds(aug_layout, max_width=MAX_COORD, max_length=MAX_COORD)
                 rooms = (aug_layout.get("layout") or {}).get("rooms", [])
-                if check_bounds(rooms) or check_overlaps(rooms):
+                issues = check_bounds(rooms) + check_overlaps(rooms)
+                if issues:
+                    if strict:
+                        raise ValueError("; ".join(issues))
                     continue
                 try:
                     _write_sample(params, aug_layout, out_dir, idx)
                 except ValueError:
+                    if strict:
+                        raise
                     continue
                 idx += 1
     return idx - start_index
@@ -215,7 +230,14 @@ def _write_sample(params, layout, out_dir, idx):
     render_layout_svg(layout, sp)
 
 
-def main(n=50, out_dir=OUT_DIR, external_dir=None, seed=None, augment=False):
+def main(
+    n=50,
+    out_dir=OUT_DIR,
+    external_dir=None,
+    seed=None,
+    augment=False,
+    strict=False,
+):
     random.seed(seed)
     if np is not None:
         np.random.seed(seed)
@@ -229,26 +251,37 @@ def main(n=50, out_dir=OUT_DIR, external_dir=None, seed=None, augment=False):
         try:
             layout = random_layout(idx, params, rng)
         except ValueError:
+            if strict:
+                raise
             continue
         try:
             _write_sample(params, layout, out_dir, idx)
         except ValueError:
+            if strict:
+                raise
             continue
         idx += 1
         if augment:
             for aug_layout in (mirror_layout(layout), rotate_layout(layout)):
                 aug_layout = clamp_bounds(aug_layout, max_width=MAX_COORD, max_length=MAX_COORD)
                 rooms = (aug_layout.get("layout") or {}).get("rooms", [])
-                if check_bounds(rooms) or check_overlaps(rooms):
+                issues = check_bounds(rooms) + check_overlaps(rooms)
+                if issues:
+                    if strict:
+                        raise ValueError("; ".join(issues))
                     continue
                 try:
                     _write_sample(params, aug_layout, out_dir, idx)
                 except ValueError:
+                    if strict:
+                        raise
                     continue
                 idx += 1
 
     if external_dir:
-        idx += ingest_external_dataset(external_dir, out_dir, start_index=idx, augment=augment)
+        idx += ingest_external_dataset(
+            external_dir, out_dir, start_index=idx, augment=augment, strict=strict
+        )
 
     print(f"Wrote {idx} pairs to {out_dir}")
 
@@ -261,7 +294,21 @@ if __name__ == "__main__":
     parser.add_argument("--external_dir", type=str, default=None, help="path to external JSON floor-plan dataset")
     parser.add_argument("--out_dir", type=str, default=OUT_DIR, help="output directory")
     parser.add_argument("--seed", type=int, default=None, help="random seed for reproducibility")
-    parser.add_argument("--augment", action="store_true", help="apply simple mirroring/rotation augmentations")
+    parser.add_argument(
+        "--augment", action="store_true", help="apply simple mirroring/rotation augmentations"
+    )
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="Fail immediately on any boundary or overlap issues instead of skipping",
+    )
     args = parser.parse_args()
 
-    main(n=args.n, out_dir=args.out_dir, external_dir=args.external_dir, seed=args.seed, augment=args.augment)
+    main(
+        n=args.n,
+        out_dir=args.out_dir,
+        external_dir=args.external_dir,
+        seed=args.seed,
+        augment=args.augment,
+        strict=args.strict,
+    )

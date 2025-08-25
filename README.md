@@ -19,8 +19,8 @@ Synthetic layouts are produced with parameter files in `dataset/params/` and
 converted into paired JSONL records for training. Run:
 
 ```bash
-python dataset/generate_dataset.py --seed 42       # create JSON + SVG pairs
-python scripts/build_jsonl.py --seed 42            # shuffle into train/val splits
+python dataset/generate_dataset.py --seed 42 --strict       # create JSON + SVG pairs
+python scripts/build_jsonl.py --seed 42 --strict            # shuffle into train/val splits
 ```
 
 Use the same `--seed` value for both commands to ensure full reproducibility.
@@ -37,11 +37,12 @@ bounds. Pass `--skip-bounds-check` to disable the range validation.
 Use the helper script `evaluation/evaluate_sample.py` to validate generated
 layouts. Passing `--strict` causes the command to exit with a non-zero status if
 any geometry or parameter issues are detected, which is useful for automated
-checks:
+checks. Add `--json-report report.json` to emit a machine-readable summary:
 
 ```bash
 python evaluation/evaluate_sample.py --params sample_params.json \
-       --layout my_layout.json --svg_out check.svg --strict
+       --layout my_layout.json --svg_out check.svg --strict \
+       --json-report report.json
 ```
 
 The script renders an SVG for visual inspection and prints warnings or errors
