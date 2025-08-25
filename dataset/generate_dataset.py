@@ -61,13 +61,46 @@ def sample_parameters(i, rng=random):
 
 
 def _place_room(rooms, room_type, rng, max_coord=MAX_COORD, max_attempts=100):
-    """Attempt to place a non-overlapping room on the canvas."""
+    """Place a room so it shares a wall with an existing room.
+
+    The first room is anchored at ``(0, 0)``.  Subsequent rooms are attached
+    edge-to-edge to a randomly selected existing room.  This encourages the
+    layout to form a contiguous chain of rooms rather than scattering them at
+    random coordinates.
+    """
+
     for _ in range(max_attempts):
         width = rng.randint(6, 12)
         length = rng.randint(6, 12)
-        x = rng.randint(0, max_coord - width)
-        y = rng.randint(0, max_coord - length)
+
+        if not rooms:
+            x, y = 0, 0
+        else:
+            base = rng.choice(rooms)
+            bx, by = base["position"]["x"], base["position"]["y"]
+            bw, bl = base["size"]["width"], base["size"]["length"]
+            side = rng.choice(["right", "left", "top", "bottom"])
+            if side == "right":
+                x = bx + bw
+                y = by
+                length = bl
+            elif side == "left":
+                x = bx - width
+                y = by
+                length = bl
+            elif side == "top":
+                x = bx
+                y = by + bl
+                width = bw
+            else:  # bottom
+                x = bx
+                y = by - length
+                width = bw
+
         rect = (x, y, x + width, y + length)
+        if x < 0 or y < 0 or rect[2] > max_coord or rect[3] > max_coord:
+            continue
+
         overlap = False
         for r in rooms:
             rx, ry = r["position"]["x"], r["position"]["y"]
