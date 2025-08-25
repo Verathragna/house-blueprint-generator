@@ -34,6 +34,12 @@ def main():
         default=1.0,
         help="Minimum room separation; 0 disables post-processing",
     )
+    ap.add_argument(
+        "--max_attempts",
+        type=int,
+        default=3,
+        help="Maximum decode retries before clamping",
+    )
     args = ap.parse_args()
 
     try:
@@ -66,7 +72,7 @@ def main():
     max_w = float(dims.get("width", 40))
     max_h = float(dims.get("depth", dims.get("height", 40)))
 
-    max_attempts = 3
+    max_attempts = args.max_attempts
     layout_json = None
     missing = []
     for attempt in range(max_attempts):
@@ -79,16 +85,17 @@ def main():
             beam_size=args.beam_size,
             required_counts=room_counts,
             bias_tokens=bias_tokens,
+            tokenizer=tk,
+            max_width=max_w,
+            max_length=max_h,
         )
         layout_json = tk.decode_layout_tokens(layout_tokens)
-        if args.min_separation > 0:
-            layout_json = enforce_min_separation(layout_json, args.min_separation)
 
         issues = validate_layout(
             layout_json,
             max_width=max_w,
             max_length=max_h,
-            min_separation=args.min_separation,
+            min_separation=0,
         )
         if issues:
             if attempt < max_attempts - 1:
@@ -102,12 +109,40 @@ def main():
                 layout_json,
                 max_width=max_w,
                 max_length=max_h,
-                min_separation=args.min_separation,
+                min_separation=0,
             )
             if issues:
                 raise BoundaryViolationError(
                     "Layout validation failed after clamping: " + "; ".join(issues)
                 )
+
+        if args.min_separation > 0:
+            layout_json = enforce_min_separation(layout_json, args.min_separation)
+            issues = validate_layout(
+                layout_json,
+                max_width=max_w,
+                max_length=max_h,
+                min_separation=args.min_separation,
+            )
+            if issues:
+                if attempt < max_attempts - 1:
+                    print(
+                        f"Layout validation failed: {'; '.join(issues)}. Regenerating...",
+                        file=sys.stderr,
+                    )
+                    continue
+                layout_json = clamp_bounds(layout_json, max_w, max_h)
+                issues = validate_layout(
+                    layout_json,
+                    max_width=max_w,
+                    max_length=max_h,
+                    min_separation=args.min_separation,
+                )
+                if issues:
+                    raise BoundaryViolationError(
+                        "Layout validation failed after clamping: "
+                        + "; ".join(issues)
+                    )
 
         missing = assert_room_counts(layout_json, raw)
         if not missing:
