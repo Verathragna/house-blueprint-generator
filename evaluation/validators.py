@@ -104,6 +104,36 @@ def _too_close(r1: Dict, r2: Dict, min_sep: float) -> bool:
     )
 
 
+def _shares_wall(r1: Dict, r2: Dict, tol: float = 1e-6) -> bool:
+    """Return ``True`` if two rooms share a wall segment."""
+
+    ax1, ay1, ax2, ay2 = _room_bounds(r1)
+    bx1, by1, bx2, by2 = _room_bounds(r2)
+
+    vertical_touch = (abs(ax2 - bx1) < tol or abs(bx2 - ax1) < tol) and (
+        min(ay2, by2) - max(ay1, by1) > 0
+    )
+    horizontal_touch = (abs(ay2 - by1) < tol or abs(by2 - ay1) < tol) and (
+        min(ax2, bx2) - max(ax1, bx1) > 0
+    )
+    return vertical_touch or horizontal_touch
+
+
+def check_connectivity(rooms: List[Dict]) -> List[str]:
+    """Verify every room is adjacent to at least one other room."""
+
+    issues: List[str] = []
+    if len(rooms) <= 1:
+        return issues
+
+    for i, r1 in enumerate(rooms):
+        if not any(_shares_wall(r1, r2) for j, r2 in enumerate(rooms) if i != j):
+            issues.append(
+                f"Room {r1.get('type', 'Unknown')} is not connected to any other room"
+            )
+    return issues
+
+
 def check_separation(rooms: List[Dict], min_sep: float) -> List[str]:
     """Ensure rooms are at least ``min_sep`` units apart.
 
@@ -151,6 +181,7 @@ def validate_layout(
     max_width: float = 40,
     max_length: float = 40,
     min_separation: float = 0,
+    require_connectivity: bool = True,
 ) -> List[str]:
     """Validate layout geometry.
 
@@ -169,6 +200,8 @@ def validate_layout(
     issues: List[str] = []
     issues.extend(check_bounds(rooms, max_width=max_width, max_length=max_length))
     issues.extend(check_overlaps(rooms))
+    if require_connectivity:
+        issues.extend(check_connectivity(rooms))
     if min_separation > 0:
         issues.extend(check_separation(rooms, min_separation))
     return issues
@@ -178,6 +211,7 @@ __all__ = [
     "check_bounds",
     "check_overlaps",
     "check_separation",
+    "check_connectivity",
     "validate_layout",
     "enforce_min_separation",
     "clamp_bounds",
