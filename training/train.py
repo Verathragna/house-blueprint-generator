@@ -29,8 +29,12 @@ class PairDataset(Dataset):
             )
 
         # ensure coordinate fields are present so position tokens can be learned
-        for room in row.get("layout", {}).get("layout", {}).get("rooms", []):
-            room.setdefault("position", {"x": 0, "y": 0})
+        for idx, room in enumerate(
+            row.get("layout", {}).get("layout", {}).get("rooms", [])
+        ):
+            pos = room.get("position") or {}
+            if "x" not in pos or "y" not in pos:
+                raise ValueError(f"Room {idx} missing x or y position")
         x_ids, y_ids = self.tk.build_training_pair(row["params"], row["layout"])
         return torch.tensor(x_ids, dtype=torch.long), torch.tensor(y_ids, dtype=torch.long)
 

@@ -28,8 +28,9 @@ Use the same `--seed` value for both commands to ensure full reproducibility.
 All layouts are scaled to fit within a 40×40 coordinate space. Rooms whose
 positions or dimensions would exceed these bounds are scaled down before being
 written. The preprocessing step in `scripts/build_jsonl.py` verifies that every
-room supplies both `x` and `y` coordinates and enforces the `[0, 40]` range,
-raising an error if a room is missing a coordinate or lies outside the bounds.
+room supplies both `x` and `y` coordinates and, by default, enforces the `[0, 40]`
+range, raising an error if a room is missing a coordinate or lies outside the
+bounds. Pass `--skip-bounds-check` to disable the range validation.
 
 ## Evaluation
 
