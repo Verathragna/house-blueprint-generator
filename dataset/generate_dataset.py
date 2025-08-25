@@ -182,7 +182,10 @@ def ingest_external_dataset(external_dir, out_dir=OUT_DIR, start_index=0, augmen
             "params", {"houseStyle": "External", "squareFeet": data.get("squareFeet", 0)}
         )
 
-        _write_sample(params, layout, out_dir, idx)
+        try:
+            _write_sample(params, layout, out_dir, idx)
+        except ValueError:
+            continue
         idx += 1
         if augment:
             for aug_layout in (mirror_layout(layout), rotate_layout(layout)):
@@ -200,6 +203,7 @@ def ingest_external_dataset(external_dir, out_dir=OUT_DIR, start_index=0, augmen
 
 def _write_sample(params, layout, out_dir, idx):
     layout = _scale_layout(layout)
+    layout = clamp_bounds(layout, max_width=MAX_COORD, max_length=MAX_COORD)
     validate_layout(layout)
     ip = os.path.join(out_dir, f"input_{idx:05d}.json")
     lp = os.path.join(out_dir, f"layout_{idx:05d}.json")
@@ -226,7 +230,10 @@ def main(n=50, out_dir=OUT_DIR, external_dir=None, seed=None, augment=False):
             layout = random_layout(idx, params, rng)
         except ValueError:
             continue
-        _write_sample(params, layout, out_dir, idx)
+        try:
+            _write_sample(params, layout, out_dir, idx)
+        except ValueError:
+            continue
         idx += 1
         if augment:
             for aug_layout in (mirror_layout(layout), rotate_layout(layout)):

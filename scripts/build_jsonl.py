@@ -41,10 +41,18 @@ def _validate_layout(
         if not pos or "x" not in pos or "y" not in pos:
             raise ValueError(f"Room {idx} missing x or y position")
         x, y = pos["x"], pos["y"]
-        if enforce_bounds and not (0 <= x <= max_coord and 0 <= y <= max_coord):
-            raise ValueError(
-                f"Room {idx} position out of range: x={x}, y={y}, max={max_coord}"
-            )
+        size = room.get("size", {})
+        w = size.get("width", 0)
+        l = size.get("length", 0)
+        if enforce_bounds:
+            if not (0 <= x <= max_coord and 0 <= y <= max_coord):
+                raise ValueError(
+                    f"Room {idx} position out of range: x={x}, y={y}, max={max_coord}"
+                )
+            if x + w > max_coord or y + l > max_coord:
+                raise ValueError(
+                    f"Room {idx} exceeds bounds: x={x}, width={w}, y={y}, length={l}, max={max_coord}"
+                )
 
 def main(seed: int = 42, augment: bool = False, check_bounds: bool = True) -> None:
     random.seed(seed)
