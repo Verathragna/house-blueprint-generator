@@ -8,6 +8,10 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from dataset.render_svg import render_layout_svg
 from dataset.augmentation import mirror_layout, rotate_layout
 
+# Maximum width/height for any layout. Rooms will be scaled to fit within this
+# square coordinate space.
+MAX_COORD = 40
+
 OUT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), 'datasets/synthetic'))
 
 STYLES = ["Craftsman", "Modern", "Colonial", "Ranch", "Mediterranean"]
@@ -45,20 +49,49 @@ def random_layout(i, rng=random):
         y = base_y + rng.randint(0, 20)
         width = rng.randint(8, 16)
         length = rng.randint(8, 16)
-        rooms.append({
-            "type": room_type,
-            "position": {"x": x, "y": y},
-            "size": {"width": width, "length": length},
-        })
+        rooms.append(
+            {
+                "type": room_type,
+                "position": {"x": x, "y": y},
+                "size": {"width": width, "length": length},
+            }
+        )
     return {"layout": {"rooms": rooms}}
 
 
-def validate_layout(layout):
-    """Ensure every room includes ``position`` with ``x`` and ``y``."""
+def _scale_layout(layout, max_width=MAX_COORD, max_height=MAX_COORD):
+    """Scale layout so all rooms fit within ``max_width`` × ``max_height``."""
+    rooms = layout.get("layout", {}).get("rooms", [])
+    if not rooms:
+        return layout
+
+    max_x = max(r["position"]["x"] + r["size"]["width"] for r in rooms)
+    max_y = max(r["position"]["y"] + r["size"]["length"] for r in rooms)
+    scale = min(max_width / max_x, max_height / max_y, 1.0)
+
+    if scale < 1.0:
+        for r in rooms:
+            r["position"]["x"] = int(r["position"]["x"] * scale)
+            r["position"]["y"] = int(r["position"]["y"] * scale)
+            r["size"]["width"] = int(r["size"]["width"] * scale)
+            r["size"]["length"] = int(r["size"]["length"] * scale)
+    return layout
+
+
+def validate_layout(layout, max_width=MAX_COORD, max_height=MAX_COORD):
+    """Ensure rooms have coordinates and respect the bounding box."""
     for idx, room in enumerate(layout.get("layout", {}).get("rooms", [])):
         pos = room.get("position")
+        size = room.get("size", {})
         if not isinstance(pos, dict) or "x" not in pos or "y" not in pos:
             raise ValueError(f"Room {idx} missing coordinate fields")
+        width = size.get("width", 0)
+        length = size.get("length", 0)
+        x, y = pos["x"], pos["y"]
+        if not (0 <= x <= max_width and 0 <= y <= max_height):
+            raise ValueError(f"Room {idx} position out of bounds")
+        if x + width > max_width or y + length > max_height:
+            raise ValueError(f"Room {idx} exceeds layout bounds")
 
 
 def ingest_external_dataset(external_dir, out_dir=OUT_DIR, start_index=0, augment=False):
@@ -87,7 +120,9 @@ def ingest_external_dataset(external_dir, out_dir=OUT_DIR, start_index=0, augmen
             })
 
         layout = {"layout": {"rooms": rooms}}
-        params = data.get("params", {"houseStyle": "External", "squareFeet": data.get("squareFeet", 0)})
+        params = data.get(
+            "params", {"houseStyle": "External", "squareFeet": data.get("squareFeet", 0)}
+        )
 
         _write_sample(params, layout, out_dir, idx)
         idx += 1
@@ -99,6 +134,7 @@ def ingest_external_dataset(external_dir, out_dir=OUT_DIR, start_index=0, augmen
 
 
 def _write_sample(params, layout, out_dir, idx):
+    layout = _scale_layout(layout)
     validate_layout(layout)
     ip = os.path.join(out_dir, f"input_{idx:05d}.json")
     lp = os.path.join(out_dir, f"layout_{idx:05d}.json")

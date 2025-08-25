@@ -25,6 +25,11 @@ python scripts/build_jsonl.py --seed 42            # shuffle into train/val spli
 
 The optional `--seed` flag ensures reproducible shuffling.
 
+All layouts are scaled to fit within a 40×40 coordinate space. Rooms whose
+positions or dimensions would exceed these bounds are scaled down before being
+written. The preprocessing step in `scripts/build_jsonl.py` enforces this limit
+and will raise an error if any room falls outside the `[0, 40]` range.
+
 ## Training
 
 Train the transformer using the prepared JSONL files. The example below trains
