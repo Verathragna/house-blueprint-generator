@@ -3,6 +3,19 @@ import json
 import sys
 import random
 
+try:
+    import numpy as np
+except Exception:  # NumPy not available
+    np = None
+
+if np is not None:
+    try:
+        import torch  # type: ignore
+    except Exception:  # PyTorch not available
+        torch = None
+else:
+    torch = None
+
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from dataset.render_svg import render_layout_svg
@@ -149,6 +162,11 @@ def _write_sample(params, layout, out_dir, idx):
 
 
 def main(n=50, out_dir=OUT_DIR, external_dir=None, seed=None, augment=False):
+    random.seed(seed)
+    if np is not None:
+        np.random.seed(seed)
+    if torch is not None:
+        torch.manual_seed(seed)
     os.makedirs(out_dir, exist_ok=True)
     rng = random.Random(seed)
     idx = 0
