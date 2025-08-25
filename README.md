@@ -27,8 +27,9 @@ The optional `--seed` flag ensures reproducible shuffling.
 
 All layouts are scaled to fit within a 40×40 coordinate space. Rooms whose
 positions or dimensions would exceed these bounds are scaled down before being
-written. The preprocessing step in `scripts/build_jsonl.py` enforces this limit
-and will raise an error if any room falls outside the `[0, 40]` range.
+written. The preprocessing step in `scripts/build_jsonl.py` verifies that every
+room supplies both `x` and `y` coordinates and enforces the `[0, 40]` range,
+raising an error if a room is missing a coordinate or lies outside the bounds.
 
 ## Training
 

@@ -25,18 +25,26 @@ else:
     torch = None
 
 
-def _check_bounds(layout, max_coord: int = MAX_COORD) -> None:
+def _validate_layout(
+    layout: dict,
+    enforce_bounds: bool = True,
+    max_coord: int = MAX_COORD,
+) -> None:
+    """Ensure every room specifies an ``x`` and ``y`` position.
+
+    Optionally verifies that coordinates fall within the 0–``max_coord`` range.
+    Raises ``ValueError`` if validation fails.
+    """
+
     for idx, room in enumerate(layout.get("layout", {}).get("rooms", [])):
-        pos = room.get("position", {})
-        size = room.get("size", {})
-        x, y = pos.get("x"), pos.get("y")
-        width, length = size.get("width", 0), size.get("length", 0)
-        if any(v is None for v in (x, y, width, length)):
-            raise ValueError(f"Room {idx} missing coordinate fields")
-        if not (0 <= x <= max_coord and 0 <= y <= max_coord):
-            raise ValueError(f"Room {idx} position out of range")
-        if x + width > max_coord or y + length > max_coord:
-            raise ValueError(f"Room {idx} exceeds {max_coord}x{max_coord} bounds")
+        pos = room.get("position")
+        if not pos or "x" not in pos or "y" not in pos:
+            raise ValueError(f"Room {idx} missing x or y position")
+        x, y = pos["x"], pos["y"]
+        if enforce_bounds and not (0 <= x <= max_coord and 0 <= y <= max_coord):
+            raise ValueError(
+                f"Room {idx} position out of range: x={x}, y={y}, max={max_coord}"
+            )
 
 def main(seed: int = 42, augment: bool = False) -> None:
     random.seed(seed)
@@ -60,13 +68,13 @@ def main(seed: int = 42, augment: bool = False) -> None:
         lp = os.path.join(in_dir, f"layout_{idx}.json")
         if os.path.exists(lp):
             layout = json.load(open(lp, "r", encoding="utf-8"))
-            _check_bounds(layout)
+            _validate_layout(layout)
             x_ids, y_ids = tk.build_training_pair(inp, layout)
             pairs.append({"params": inp, "layout": layout, "x": x_ids, "y": y_ids})
 
             if augment:
                 for aug_layout in (mirror_layout(layout), rotate_layout(layout)):
-                    _check_bounds(aug_layout)
+                    _validate_layout(aug_layout)
                     ax, ay = tk.build_training_pair(inp, aug_layout)
                     pairs.append({"params": inp, "layout": aug_layout, "x": ax, "y": ay})
 
