@@ -46,7 +46,7 @@ def _validate_layout(
                 f"Room {idx} position out of range: x={x}, y={y}, max={max_coord}"
             )
 
-def main(seed: int = 42, augment: bool = False) -> None:
+def main(seed: int = 42, augment: bool = False, check_bounds: bool = True) -> None:
     random.seed(seed)
     if np is not None:
         np.random.seed(seed)
@@ -68,13 +68,13 @@ def main(seed: int = 42, augment: bool = False) -> None:
         lp = os.path.join(in_dir, f"layout_{idx}.json")
         if os.path.exists(lp):
             layout = json.load(open(lp, "r", encoding="utf-8"))
-            _validate_layout(layout)
+            _validate_layout(layout, enforce_bounds=check_bounds)
             x_ids, y_ids = tk.build_training_pair(inp, layout)
             pairs.append({"params": inp, "layout": layout, "x": x_ids, "y": y_ids})
 
             if augment:
                 for aug_layout in (mirror_layout(layout), rotate_layout(layout)):
-                    _validate_layout(aug_layout)
+                    _validate_layout(aug_layout, enforce_bounds=check_bounds)
                     ax, ay = tk.build_training_pair(inp, aug_layout)
                     pairs.append({"params": inp, "layout": aug_layout, "x": ax, "y": ay})
 
@@ -108,5 +108,10 @@ if __name__ == "__main__":
         action="store_true",
         help="Apply simple mirroring/rotation augmentations",
     )
+    parser.add_argument(
+        "--skip-bounds-check",
+        action="store_true",
+        help=f"Allow room positions outside the [0, {MAX_COORD}] range",
+    )
     args = parser.parse_args()
-    main(args.seed, augment=args.augment)
+    main(args.seed, augment=args.augment, check_bounds=not args.skip_bounds_check)
