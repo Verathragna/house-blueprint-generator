@@ -42,6 +42,28 @@ def check_bounds(rooms: List[Dict], max_width: float = 40, max_length: float = 4
     return issues
 
 
+def clamp_bounds(layout: Dict, max_width: float = 40, max_length: float = 40) -> Dict:
+    """Clamp room positions so they lie within the layout bounds.
+
+    Each room's ``x`` and ``y`` coordinates are adjusted so that the
+    resulting room rectangle remains within ``[0, max_width]`` and
+    ``[0, max_length]``.
+    """
+
+    rooms = (layout.get("layout") or {}).get("rooms", [])
+    for room in rooms:
+        pos = room.setdefault("position", {})
+        size = room.get("size") or {}
+        w = float(size.get("width", 0))
+        l = float(size.get("length", 0))
+        x = float(pos.get("x", 0))
+        y = float(pos.get("y", 0))
+        x = max(0.0, min(x, max_width - w))
+        y = max(0.0, min(y, max_length - l))
+        pos["x"], pos["y"] = x, y
+    return layout
+
+
 def check_overlaps(rooms: List[Dict]) -> List[str]:
     """Check for overlapping rooms.
 
@@ -158,4 +180,5 @@ __all__ = [
     "check_separation",
     "validate_layout",
     "enforce_min_separation",
+    "clamp_bounds",
 ]

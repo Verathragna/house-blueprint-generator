@@ -21,7 +21,7 @@ if repo_root not in sys.path:
     sys.path.insert(0, repo_root)
 
 from dataset.render_svg import render_layout_svg
-from evaluation.validators import validate_layout
+from evaluation.validators import validate_layout, check_bounds
 
 
 log = logging.getLogger(__name__)
@@ -96,6 +96,11 @@ def main() -> None:
         default=0.0,
         help="Minimum separation required between rooms during validation",
     )
+    ap.add_argument(
+        "--strict",
+        action="store_true",
+        help="Fail immediately if any room lies outside the layout bounds",
+    )
     args = ap.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
@@ -103,10 +108,29 @@ def main() -> None:
     params = json.load(open(args.params, "r", encoding="utf-8"))
     layout = json.load(open(args.layout, "r", encoding="utf-8"))
 
+    dims = params.get("dimensions") or {}
+    max_w = float(dims.get("width", 40))
+    max_h = float(dims.get("depth", dims.get("height", 40)))
+
     render_layout_svg(layout, args.svg_out)
     log.info("Rendered layout SVG to %s", Path(args.svg_out).resolve())
 
-    issues = validate_layout(layout, min_separation=args.min_sep)
+    bounds_issues = check_bounds(
+        (layout.get("layout") or {}).get("rooms", []),
+        max_width=max_w,
+        max_length=max_h,
+    )
+    if bounds_issues and args.strict:
+        for msg in bounds_issues:
+            log.error(msg)
+        sys.exit(1)
+
+    issues = validate_layout(
+        layout,
+        max_width=max_w,
+        max_length=max_h,
+        min_separation=args.min_sep,
+    )
     issues.extend(compare_with_params(layout, params))
 
     if issues:
