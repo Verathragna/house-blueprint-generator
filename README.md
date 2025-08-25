@@ -31,6 +31,21 @@ written. The preprocessing step in `scripts/build_jsonl.py` verifies that every
 room supplies both `x` and `y` coordinates and enforces the `[0, 40]` range,
 raising an error if a room is missing a coordinate or lies outside the bounds.
 
+## Evaluation
+
+Use the helper script `evaluation/evaluate_sample.py` to validate generated
+layouts. Passing `--strict` causes the command to exit with a non-zero status if
+any geometry or parameter issues are detected, which is useful for automated
+checks:
+
+```bash
+python evaluation/evaluate_sample.py --params sample_params.json \
+       --layout my_layout.json --svg_out check.svg --strict
+```
+
+The script renders an SVG for visual inspection and prints warnings or errors
+for any detected problems.
+
 ## Training
 
 Train the transformer using the prepared JSONL files. The example below trains

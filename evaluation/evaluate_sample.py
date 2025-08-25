@@ -103,7 +103,7 @@ def main() -> None:
     ap.add_argument(
         "--strict",
         action="store_true",
-        help="Fail immediately if any room lies outside the layout bounds",
+        help="Exit with a non-zero status if any validation issues are found",
     )
     args = ap.parse_args()
 
@@ -124,22 +124,29 @@ def main() -> None:
         max_width=max_w,
         max_length=max_h,
     )
-    if bounds_issues and args.strict:
-        for msg in bounds_issues:
-            log.error(msg)
-        raise BoundaryViolationError("; ".join(bounds_issues))
 
-    issues = validate_layout(
-        layout,
-        max_width=max_w,
-        max_length=max_h,
-        min_separation=args.min_sep,
-    )
+    issues = [
+        msg
+        for msg in validate_layout(
+            layout,
+            max_width=max_w,
+            max_length=max_h,
+            min_separation=args.min_sep,
+        )
+        if msg not in bounds_issues
+    ]
     issues.extend(compare_with_params(layout, params))
 
-    if issues:
-        for msg in issues:
-            log.warning(msg)
+    all_issues = bounds_issues + issues
+
+    if all_issues:
+        log_func = log.error if args.strict else log.warning
+        for msg in all_issues:
+            log_func(msg)
+        if args.strict:
+            if bounds_issues:
+                raise BoundaryViolationError("; ".join(all_issues))
+            raise RuntimeError("; ".join(all_issues))
     else:
         log.info("No issues detected")
 
@@ -147,6 +154,6 @@ def main() -> None:
 if __name__ == "__main__":
     try:
         main()
-    except BoundaryViolationError as exc:
+    except Exception as exc:  # pragma: no cover - CLI entry point
         log.error("%s", exc)
         sys.exit(1)
