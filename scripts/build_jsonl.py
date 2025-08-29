@@ -1,5 +1,6 @@
 import argparse
 import json
+import logging
 import os
 import random
 import sys
@@ -66,6 +67,7 @@ def main(
     check_bounds: bool = True,
     strict: bool = False,
 ) -> None:
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
     random.seed(seed)
     if np is not None:
         np.random.seed(seed)
@@ -83,10 +85,20 @@ def main(
     )
     for f in files:
         idx = f.split("_")[1].split(".")[0]
-        inp = json.load(open(os.path.join(in_dir, f), "r", encoding="utf-8"))
+        try:
+            with open(os.path.join(in_dir, f), "r", encoding="utf-8") as fh:
+                inp = json.load(fh)
+        except (OSError, json.JSONDecodeError) as e:
+            logging.warning("Failed to read %s: %s", f, e)
+            continue
         lp = os.path.join(in_dir, f"layout_{idx}.json")
         if os.path.exists(lp):
-            layout = json.load(open(lp, "r", encoding="utf-8"))
+            try:
+                with open(lp, "r", encoding="utf-8") as lf:
+                    layout = json.load(lf)
+            except (OSError, json.JSONDecodeError) as e:
+                logging.warning("Failed to read %s: %s", lp, e)
+                continue
             _validate_layout(layout, enforce_bounds=check_bounds, strict=strict)
             x_ids, y_ids = tk.build_training_pair(inp, layout)
             pairs.append({"params": inp, "layout": layout, "x": x_ids, "y": y_ids})

@@ -1,4 +1,4 @@
-import os, sys, json, argparse, torch
+import os, sys, json, argparse, torch, logging
 from pydantic import ValidationError
 current_dir = os.path.dirname(os.path.abspath(__file__))
 repo_root = os.path.abspath(os.path.join(current_dir, ".."))
@@ -11,6 +11,8 @@ from dataset.render_svg import render_layout_svg
 from evaluation.validators import enforce_min_separation, clamp_bounds, validate_layout
 from evaluation.evaluate_sample import assert_room_counts, BoundaryViolationError
 from Generate.params import Params
+
+log = logging.getLogger(__name__)
 
 CKPT = os.path.join(repo_root, "checkpoints", "model_latest.pth")
 
@@ -43,10 +45,11 @@ def main():
     args = ap.parse_args()
 
     try:
-        raw = json.load(open(args.params_json, "r", encoding="utf-8"))
+        with open(args.params_json, "r", encoding="utf-8") as f:
+            raw = json.load(f)
         params = Params.model_validate(raw)
-    except (json.JSONDecodeError, ValidationError) as e:
-        print(f"Invalid parameters: {e}", file=sys.stderr)
+    except (OSError, json.JSONDecodeError, ValidationError) as e:
+        log.error("Invalid parameters: %s", e)
         sys.exit(1)
 
     tk = BlueprintTokenizer()
@@ -187,8 +190,9 @@ def main():
     print(f"Wrote {json_path} and {svg_path}")
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
     try:
         main()
     except BoundaryViolationError as exc:
-        print(f"Boundary violation: {exc}", file=sys.stderr)
+        log.error("Boundary violation: %s", exc)
         sys.exit(1)
