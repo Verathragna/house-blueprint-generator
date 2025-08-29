@@ -47,8 +47,13 @@ def main():
     try:
         with open(args.params_json, "r", encoding="utf-8") as f:
             raw = json.load(f)
+    except (OSError, json.JSONDecodeError) as e:
+        log.error("Failed to read params file %s: %s", args.params_json, e)
+        sys.exit(1)
+
+    try:
         params = Params.model_validate(raw)
-    except (OSError, json.JSONDecodeError, ValidationError) as e:
+    except ValidationError as e:
         log.error("Invalid parameters: %s", e)
         sys.exit(1)
 
@@ -185,8 +190,17 @@ def main():
     json_path = f"{args.out_prefix}.json"
     svg_path = f"{args.out_prefix}.svg"
     layout_json = clamp_bounds(layout_json, max_w, max_h)
-    json.dump(layout_json, open(json_path, "w", encoding="utf-8"), indent=2)
-    render_layout_svg(layout_json, svg_path)
+    try:
+        with open(json_path, "w", encoding="utf-8") as f:
+            json.dump(layout_json, f, indent=2)
+    except OSError as e:
+        log.error("Failed to write layout JSON to %s: %s", json_path, e)
+        sys.exit(1)
+    try:
+        render_layout_svg(layout_json, svg_path)
+    except OSError as e:
+        log.error("Failed to write SVG to %s: %s", svg_path, e)
+        sys.exit(1)
     print(f"Wrote {json_path} and {svg_path}")
 
 if __name__ == "__main__":
