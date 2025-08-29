@@ -1,12 +1,51 @@
 import svgwrite
 
-def render_layout_svg(layout_data, svg_path, scale=10):
+
+def render_layout_svg(layout_data, svg_path, lot_dims=None, scale=10):
     rooms = layout_data.get("layout", {}).get("rooms", [])
 
-    # Determine canvas bounds based on room coordinates
-    max_x = max((r.get("position", {}).get("x", 0) + r.get("size", {}).get("width", 0)) for r in rooms) * scale if rooms else 0
-    max_y = max((r.get("position", {}).get("y", 0) + r.get("size", {}).get("length", 0)) for r in rooms) * scale if rooms else 0
-    dwg = svgwrite.Drawing(svg_path, profile='tiny', size=(max_x, max_y))
+    if lot_dims:
+        lot_w, lot_h = lot_dims
+        max_x = lot_w * scale
+        max_y = lot_h * scale
+    else:
+        # Determine canvas bounds based on room coordinates
+        max_x = (
+            max(
+                (
+                    r.get("position", {}).get("x", 0)
+                    + r.get("size", {}).get("width", 0)
+                )
+                for r in rooms
+            )
+            * scale
+            if rooms
+            else 0
+        )
+        max_y = (
+            max(
+                (
+                    r.get("position", {}).get("y", 0)
+                    + r.get("size", {}).get("length", 0)
+                )
+                for r in rooms
+            )
+            * scale
+            if rooms
+            else 0
+        )
+    dwg = svgwrite.Drawing(svg_path, profile="tiny", size=(max_x, max_y))
+
+    if lot_dims:
+        dwg.add(
+            dwg.rect(
+                insert=(0, 0),
+                size=(max_x, max_y),
+                fill="none",
+                stroke="black",
+                stroke_width=3,
+            )
+        )
 
     font_main = "Arial"
     font_size_label = 12

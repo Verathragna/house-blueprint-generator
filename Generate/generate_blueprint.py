@@ -210,7 +210,7 @@ def main():
         log.error("Failed to write layout JSON to %s: %s", json_path, e)
         sys.exit(1)
     try:
-        render_layout_svg(layout_json, svg_path)
+        render_layout_svg(layout_json, svg_path, lot_dims=(max_w, max_h))
     except OSError as e:
         log.error("Failed to write SVG to %s: %s", svg_path, e)
         sys.exit(1)

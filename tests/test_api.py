@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 from api.app import app, _tokenizer
 
 
-def dummy_render(layout_json, svg_path):
+def dummy_render(layout_json, svg_path, lot_dims=None):
     with open(svg_path, "w", encoding="utf-8") as f:
         f.write("<svg></svg>")
 

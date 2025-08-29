@@ -26,7 +26,7 @@ class DummyModel(torch.nn.Module):
         return logits
 
 
-def dummy_render(layout_json, svg_path):
+def dummy_render(layout_json, svg_path, lot_dims=None):
     Path(svg_path).write_text("<svg></svg>")
 
 
