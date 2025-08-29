@@ -21,7 +21,7 @@ if repo_root not in sys.path:
     sys.path.insert(0, repo_root)
 
 from dataset.render_svg import render_layout_svg
-from evaluation.validators import validate_layout, check_bounds
+from evaluation.validators import validate_layout, check_bounds, clamp_bounds
 
 
 log = logging.getLogger(__name__)
@@ -151,8 +151,7 @@ def main() -> None:
     max_w = float(dims.get("width", 40))
     max_h = float(dims.get("depth", dims.get("height", 40)))
 
-    render_layout_svg(layout, args.svg_out)
-    log.info("Rendered layout SVG to %s", Path(args.svg_out).resolve())
+    layout = clamp_bounds(layout, max_w, max_h)
 
     bounds_issues = check_bounds(
         (layout.get("layout") or {}).get("rooms", []),
@@ -173,6 +172,9 @@ def main() -> None:
     issues.extend(compare_with_params(layout, params))
 
     all_issues = bounds_issues + issues
+
+    render_layout_svg(layout, args.svg_out, lot_dims=(max_w, max_h))
+    log.info("Rendered layout SVG to %s", Path(args.svg_out).resolve())
 
     if args.json_report:
         summary = {"bounds_issues": bounds_issues, "other_issues": issues}

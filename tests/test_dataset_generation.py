@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 
 
-def dummy_render(layout, path):
+def dummy_render(layout, path, lot_dims=None):
     Path(path).write_text("<svg></svg>")
 
 
