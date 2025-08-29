@@ -1,4 +1,7 @@
 from typing import Dict, List
+import logging
+
+logger = logging.getLogger(__name__)
 
 # ---- Special tokens ----
 PAD_ID = 0
@@ -170,26 +173,26 @@ class BlueprintTokenizer:
             if tok.startswith("W"):
                 try:
                     last_w = int(tok[1:])
-                except:
-                    pass
+                except (ValueError, TypeError):
+                    logger.debug("Failed to parse width token '%s'", tok)
                 continue
             if tok.startswith("L"):
                 try:
                     last_l = int(tok[1:])
-                except:
-                    pass
+                except (ValueError, TypeError):
+                    logger.debug("Failed to parse length token '%s'", tok)
                 continue
             if tok.startswith("X"):
                 try:
                     last_x = int(tok[1:])
-                except:
-                    pass
+                except (ValueError, TypeError):
+                    logger.debug("Failed to parse X position token '%s'", tok)
                 continue
             if tok.startswith("Y"):
                 try:
                     last_y = int(tok[1:])
-                except:
-                    pass
+                except (ValueError, TypeError):
+                    logger.debug("Failed to parse Y position token '%s'", tok)
                 continue
             if tok in (
                 "BEDROOM",
