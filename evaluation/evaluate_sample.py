@@ -54,6 +54,27 @@ def assert_room_counts(layout: dict, params: dict) -> list[dict]:
     if bath_found < bath_expected:
         missing.append({"room_type": "bathroom", "expected": bath_expected, "found": bath_found})
 
+    # Core rooms required at least once by default
+    kit_expected = int(params.get("kitchen", 1))
+    kit_found = counts.get("kitchen", 0)
+    if kit_found < kit_expected:
+        missing.append({"room_type": "kitchen", "expected": kit_expected, "found": kit_found})
+
+    liv_expected = int(params.get("livingRooms", 1))
+    liv_found = counts.get("living room", 0)
+    if liv_found < liv_expected:
+        missing.append({"room_type": "living room", "expected": liv_expected, "found": liv_found})
+
+    din_expected = int(params.get("diningRooms", 1))
+    din_found = counts.get("dining room", 0)
+    if din_found < din_expected:
+        missing.append({"room_type": "dining room", "expected": din_expected, "found": din_found})
+
+    lau_expected = int(params.get("laundryRooms", 1))
+    lau_found = counts.get("laundry room", 0)
+    if lau_found < lau_expected:
+        missing.append({"room_type": "laundry room", "expected": lau_expected, "found": lau_found})
+
     if params.get("garage"):
         gar_found = counts.get("garage", 0)
         if gar_found < 1:

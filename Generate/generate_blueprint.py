@@ -72,6 +72,11 @@ def main():
         room_counts[tk.token_to_id["BEDROOM"]] = params.bedrooms
     if "bathrooms" in raw:
         room_counts[tk.token_to_id["BATHROOM"]] = params.bathrooms.full + params.bathrooms.half
+    # Core rooms are always required at least once
+    room_counts[tk.token_to_id["KITCHEN"]] = params.kitchen
+    room_counts[tk.token_to_id["LIVING"]] = params.livingRooms
+    room_counts[tk.token_to_id["DINING"]] = params.diningRooms
+    room_counts[tk.token_to_id["LAUNDRY"]] = params.laundryRooms
     if raw.get("garage"):
         room_counts[tk.token_to_id["GARAGE"]] = 1
         bias_tokens[tk.token_to_id["GARAGE"]] = 2.0
