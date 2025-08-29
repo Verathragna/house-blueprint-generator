@@ -4,6 +4,7 @@ import json
 import os
 import time
 import requests
+from requests.exceptions import RequestException
 
 
 def main():
@@ -51,15 +52,13 @@ def main():
         "min_separation": args.min_separation,
     }
     headers = {"X-API-Key": args.api_key}
+    url = f"{args.api.rstrip('/')}/generate"
     try:
-        resp = requests.post(f"{args.api.rstrip('/')}/generate", json=payload, headers=headers)
+        resp = requests.post(url, json=payload, headers=headers)
+        resp.raise_for_status()
         data = resp.json()
-    except Exception as e:
-        print(f"Failed to contact API: {e}")
-        return
-
-    if resp.status_code != 200:
-        print(f"Error: {data.get('message', data)}")
+    except RequestException as e:
+        print(f"Request to {url} failed: {e}")
         return
 
     job_id = data["job_id"]
@@ -67,12 +66,10 @@ def main():
     while True:
         try:
             status_resp = requests.get(status_url, headers=headers)
+            status_resp.raise_for_status()
             status_data = status_resp.json()
-        except Exception as e:
-            print(f"Failed to get status: {e}")
-            return
-        if status_resp.status_code != 200:
-            print(f"Error: {status_data.get('message', status_data)}")
+        except RequestException as e:
+            print(f"Request to {status_url} failed: {e}")
             return
         if status_data["status"] == "completed":
             data = status_data["result"]
