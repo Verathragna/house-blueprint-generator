@@ -1,7 +1,9 @@
 import argparse
 import base64
 import json
+import logging
 import os
+import sys
 import time
 import requests
 from requests.exceptions import RequestException
@@ -41,8 +43,15 @@ def main():
     )
     args = parser.parse_args()
 
-    with open(args.params, "r", encoding="utf-8") as f:
-        params = json.load(f)
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+    log = logging.getLogger(__name__)
+
+    try:
+        with open(args.params, "r", encoding="utf-8") as f:
+            params = json.load(f)
+    except (OSError, json.JSONDecodeError) as e:
+        log.error("Failed to read parameters file %s: %s", args.params, e)
+        sys.exit(1)
 
     payload = {
         "params": params,
@@ -83,12 +92,20 @@ def main():
     svg_data = data["svg_data_url"].split(",", 1)[1]
     svg_bytes = base64.b64decode(svg_data)
     svg_path = os.path.join(args.outdir, data.get("svg_filename", "blueprint.svg"))
-    with open(svg_path, "wb") as f:
-        f.write(svg_bytes)
+    try:
+        with open(svg_path, "wb") as f:
+            f.write(svg_bytes)
+    except OSError as e:
+        log.error("Failed to write SVG to %s: %s", svg_path, e)
+        sys.exit(1)
 
     json_path = os.path.join(args.outdir, data.get("json_filename", "layout.json"))
-    with open(json_path, "w", encoding="utf-8") as f:
-        json.dump(data["layout"], f, indent=2)
+    try:
+        with open(json_path, "w", encoding="utf-8") as f:
+            json.dump(data["layout"], f, indent=2)
+    except OSError as e:
+        log.error("Failed to write layout JSON to %s: %s", json_path, e)
+        sys.exit(1)
 
     gen_time = data.get("metadata", {}).get("processing_time")
     if gen_time is not None:
