@@ -197,8 +197,13 @@ def ingest_external_dataset(
     for fname in sorted(os.listdir(external_dir)):
         if not fname.endswith('.json'):
             continue
-        with open(os.path.join(external_dir, fname), 'r', encoding='utf-8') as f:
-            data = json.load(f)
+        path = os.path.join(external_dir, fname)
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+        except (OSError, json.JSONDecodeError) as e:
+            print(f"Skipping {fname}: {e}")
+            continue
 
         rooms = []
         for room in data.get("rooms", []):
@@ -225,9 +230,10 @@ def ingest_external_dataset(
 
         try:
             _write_sample(params, layout, out_dir, idx)
-        except ValueError:
+        except (OSError, ValueError) as e:
             if strict:
                 raise
+            print(f"Skipping {fname}: {e}")
             continue
         idx += 1
         if augment:
@@ -241,9 +247,10 @@ def ingest_external_dataset(
                     continue
                 try:
                     _write_sample(params, aug_layout, out_dir, idx)
-                except ValueError:
+                except (OSError, ValueError) as e:
                     if strict:
                         raise
+                    print(f"Skipping augmented sample from {fname}: {e}")
                     continue
                 idx += 1
     return idx - start_index
@@ -289,9 +296,10 @@ def main(
             continue
         try:
             _write_sample(params, layout, out_dir, idx)
-        except ValueError:
+        except (OSError, ValueError) as e:
             if strict:
                 raise
+            print(f"Skipping sample {idx}: {e}")
             continue
         idx += 1
         if augment:
@@ -305,9 +313,10 @@ def main(
                     continue
                 try:
                     _write_sample(params, aug_layout, out_dir, idx)
-                except ValueError:
+                except (OSError, ValueError) as e:
                     if strict:
                         raise
+                    print(f"Skipping augmented sample {idx}: {e}")
                     continue
                 idx += 1
 
