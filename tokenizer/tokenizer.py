@@ -73,9 +73,18 @@ class BlueprintTokenizer:
         elif "colonial" in style: ids.append(self.token_to_id["STYLE_COLONIAL"])
         elif "modern" in style: ids.append(self.token_to_id["STYLE_MODERN"])
 
-        for _ in range(int(params.get("bedrooms", 0))): ids.append(self.token_to_id["BEDROOM"])
-        for _ in range(int((params.get("bathrooms") or {}).get("full", 0))): ids.append(self.token_to_id["BATHROOM"])
-        ids += [self.token_to_id["KITCHEN"], self.token_to_id["LIVING"], self.token_to_id["DINING"], self.token_to_id["LAUNDRY"]]
+        for _ in range(int(params.get("bedrooms", 0))):
+            ids.append(self.token_to_id["BEDROOM"])
+        for _ in range(int((params.get("bathrooms") or {}).get("full", 0))):
+            ids.append(self.token_to_id["BATHROOM"])
+        for _ in range(int(params.get("kitchen", 1))):
+            ids.append(self.token_to_id["KITCHEN"])
+        for _ in range(int(params.get("livingRooms", 1))):
+            ids.append(self.token_to_id["LIVING"])
+        for _ in range(int(params.get("diningRooms", 1))):
+            ids.append(self.token_to_id["DINING"])
+        for _ in range(int(params.get("laundryRooms", 1))):
+            ids.append(self.token_to_id["LAUNDRY"])
 
         if params.get("bonusRoom"): ids.append(self.token_to_id["BONUS"])
         if params.get("attic"): ids.append(self.token_to_id["ATTIC"])

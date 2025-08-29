@@ -49,6 +49,10 @@ class Params(BaseModel):
     stories: Optional[int] = Field(default=1, ge=1)
     bedrooms: int = Field(default=3, ge=0)
     bathrooms: Bathrooms = Bathrooms()
+    kitchen: int = Field(default=1, ge=1)
+    livingRooms: int = Field(default=1, ge=1)
+    diningRooms: int = Field(default=1, ge=1)
+    laundryRooms: int = Field(default=1, ge=1)
     bonusRoom: Optional[bool] = False
     garage: Optional[Garage] = None
     fireplace: Optional[bool] = False
