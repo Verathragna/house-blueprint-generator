@@ -69,3 +69,37 @@ def test_external_ingestion_with_position(tmp_path, monkeypatch):
     data = json.loads(layout_file.read_text())
     room = data["layout"]["rooms"][0]
     assert room["position"] == {"x": 5, "y": 6}
+
+
+def test_skip_bad_external_file(tmp_path, monkeypatch, capsys):
+    from dataset import generate_dataset as gd
+
+    monkeypatch.setattr(gd, "render_layout_svg", dummy_render)
+
+    external_dir = tmp_path / "external"
+    external_dir.mkdir()
+    (external_dir / "bad.json").write_text("{invalid")
+
+    out_dir = tmp_path / "synthetic"
+    gd.main(n=0, external_dir=str(external_dir), out_dir=str(out_dir), seed=0)
+
+    captured = capsys.readouterr()
+    assert "bad.json" in captured.out
+    assert not list(out_dir.glob("layout_*.json"))
+
+
+def test_main_skips_write_errors(tmp_path, monkeypatch, capsys):
+    from dataset import generate_dataset as gd
+
+    def failing_write(*args, **kwargs):
+        raise OSError("boom")
+
+    monkeypatch.setattr(gd, "render_layout_svg", dummy_render)
+    monkeypatch.setattr(gd, "_write_sample", failing_write)
+
+    out_dir = tmp_path / "synthetic"
+    gd.main(n=1, out_dir=str(out_dir), seed=0)
+
+    captured = capsys.readouterr()
+    assert "Skipping sample 0" in captured.out
+    assert not list(out_dir.glob("layout_*.json"))
