@@ -8,7 +8,7 @@ describing any issues that are found.
 
 from __future__ import annotations
 
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 
 def _room_bounds(room: Dict) -> Tuple[float, float, float, float]:
@@ -134,23 +134,68 @@ def check_connectivity(rooms: List[Dict]) -> List[str]:
     return issues
 
 
-def check_separation(rooms: List[Dict], min_sep: float) -> List[str]:
-    """Ensure rooms are at least ``min_sep`` units apart.
+def check_adjacency(rooms: List[Dict], adjacency: Dict[str, List[str]]) -> List[str]:
+    """Ensure specified room pairs share a wall.
 
     Args:
         rooms: List of room dictionaries.
-        min_sep: Minimum required separation between rooms.
+        adjacency: Mapping of room types to the list of room types that must
+            be adjacent to them.
 
     Returns:
-        List of issues describing rooms that are closer than ``min_sep``.
+        List of human-readable issue strings.
+    """
+
+    type_map: Dict[str, List[Dict]] = {}
+    for r in rooms:
+        type_map.setdefault(r.get("type", "").lower(), []).append(r)
+
+    issues: List[str] = []
+    for room_type, required in (adjacency or {}).items():
+        src_rooms = type_map.get(room_type.lower())
+        if not src_rooms:
+            issues.append(f"Room {room_type} required for adjacency check is missing")
+            continue
+        for target in required:
+            tgt_rooms = type_map.get(target.lower())
+            if not tgt_rooms:
+                issues.append(
+                    f"Room {target} required to be adjacent to {room_type} is missing"
+                )
+                continue
+            if not any(
+                _shares_wall(r1, r2) for r1 in src_rooms for r2 in tgt_rooms
+            ):
+                issues.append(f"{room_type} must be adjacent to {target}")
+    return issues
+
+
+def check_separation(
+    rooms: List[Dict],
+    min_sep: float,
+    adjacency: Optional[Dict[str, List[str]]] = None,
+) -> List[str]:
+    """Ensure rooms are at least ``min_sep`` units apart.
+
+    Pairs of rooms explicitly marked as adjacent are exempt from this check.
     """
 
     issues: List[str] = []
     if min_sep <= 0:
         return issues
 
+    adj_pairs: Set[Tuple[str, str]] = set()
+    for a, bs in (adjacency or {}).items():
+        for b in bs:
+            adj_pairs.add((a.lower(), b.lower()))
+            adj_pairs.add((b.lower(), a.lower()))
+
     for i, r1 in enumerate(rooms):
+        t1 = r1.get("type", "").lower()
         for r2 in rooms[i + 1 :]:
+            t2 = r2.get("type", "").lower()
+            if (t1, t2) in adj_pairs:
+                continue
             if _too_close(r1, r2, min_sep):
                 issues.append(
                     f"Room {r1.get('type', 'Unknown')} is within {min_sep} of {r2.get('type', 'Unknown')}"
@@ -158,21 +203,98 @@ def check_separation(rooms: List[Dict], min_sep: float) -> List[str]:
     return issues
 
 
-def enforce_min_separation(layout: Dict, min_sep: float = 1.0) -> Dict:
-    """Shift rooms to ensure a minimum separation.
+def enforce_min_separation(
+    layout: Dict, min_sep: float = 1.0, adjacency: Optional[Dict[str, List[str]]] = None
+) -> Dict:
+    """Shift rooms to ensure a minimum separation while preserving adjacency.
 
-    Rooms are moved to the right until they are at least ``min_sep`` units
-    away from previously placed rooms. This is a simple post-processing step
-    and does not guarantee a globally optimal arrangement, but it prevents
-    obvious overlaps in the generated layouts.
+    Rooms that are required to be adjacent are moved as a group. The group is
+    shifted either horizontally or vertically to satisfy the minimum separation
+    from other rooms.
     """
+
     rooms = (layout.get("layout") or {}).get("rooms", [])
-    for i, room in enumerate(rooms):
+    if not rooms:
+        return layout
+
+    # Build adjacency graph of room indices
+    type_map: Dict[str, List[int]] = {}
+    for idx, room in enumerate(rooms):
+        type_map.setdefault(room.get("type", "").lower(), []).append(idx)
         pos = room.setdefault("position", {})
         pos.setdefault("x", 0.0)
         pos.setdefault("y", 0.0)
-        while any(_too_close(room, prev, min_sep) for prev in rooms[:i]):
-            pos["x"] += min_sep
+
+    graph: Dict[int, Set[int]] = {i: set() for i in range(len(rooms))}
+    for src, targets in (adjacency or {}).items():
+        for tgt in targets:
+            for i in type_map.get(src.lower(), []):
+                for j in type_map.get(tgt.lower(), []):
+                    graph[i].add(j)
+                    graph[j].add(i)
+
+    # Determine connected components (groups of rooms that must move together)
+    groups: List[Set[int]] = []
+    group_id: Dict[int, int] = {}
+    visited: Set[int] = set()
+    for i in range(len(rooms)):
+        if i in visited:
+            continue
+        stack = [i]
+        comp: Set[int] = set([i])
+        visited.add(i)
+        while stack:
+            node = stack.pop()
+            for nbr in graph[node]:
+                if nbr not in visited:
+                    visited.add(nbr)
+                    stack.append(nbr)
+                    comp.add(nbr)
+        groups.append(comp)
+        gid = len(groups) - 1
+        for idx in comp:
+            group_id[idx] = gid
+
+    def group_bounds(indices: Set[int]) -> Tuple[float, float, float, float]:
+        xs1: List[float] = []
+        ys1: List[float] = []
+        xs2: List[float] = []
+        ys2: List[float] = []
+        for idx in indices:
+            x1, y1, x2, y2 = _room_bounds(rooms[idx])
+            xs1.append(x1)
+            ys1.append(y1)
+            xs2.append(x2)
+            ys2.append(y2)
+        return min(xs1), min(ys1), max(xs2), max(ys2)
+
+    def move_group(indices: Set[int], dx: float, dy: float) -> None:
+        for idx in indices:
+            pos = rooms[idx]["position"]
+            pos["x"] += dx
+            pos["y"] += dy
+
+    changed = True
+    while changed:
+        changed = False
+        for i in range(len(rooms)):
+            for j in range(i + 1, len(rooms)):
+                gi, gj = group_id[i], group_id[j]
+                if gi == gj:
+                    continue
+                if _too_close(rooms[i], rooms[j], min_sep):
+                    ax1, ay1, ax2, ay2 = group_bounds(groups[gi])
+                    bx1, by1, bx2, by2 = group_bounds(groups[gj])
+                    shift_x = ax2 + min_sep - bx1
+                    shift_y = ay2 + min_sep - by1
+                    if shift_x <= shift_y:
+                        move_group(groups[gj], shift_x, 0.0)
+                    else:
+                        move_group(groups[gj], 0.0, shift_y)
+                    changed = True
+                    break
+            if changed:
+                break
     return layout
 
 
@@ -182,6 +304,7 @@ def validate_layout(
     max_length: float = 40,
     min_separation: float = 0,
     require_connectivity: bool = True,
+    adjacency: Optional[Dict[str, List[str]]] = None,
 ) -> List[str]:
     """Validate layout geometry.
 
@@ -202,8 +325,10 @@ def validate_layout(
     issues.extend(check_overlaps(rooms))
     if require_connectivity:
         issues.extend(check_connectivity(rooms))
+    if adjacency:
+        issues.extend(check_adjacency(rooms, adjacency))
     if min_separation > 0:
-        issues.extend(check_separation(rooms, min_separation))
+        issues.extend(check_separation(rooms, min_separation, adjacency))
     return issues
 
 
@@ -212,6 +337,7 @@ __all__ = [
     "check_overlaps",
     "check_separation",
     "check_connectivity",
+    "check_adjacency",
     "validate_layout",
     "enforce_min_separation",
     "clamp_bounds",

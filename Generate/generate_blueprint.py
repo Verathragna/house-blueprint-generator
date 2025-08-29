@@ -66,6 +66,7 @@ def main():
     model.to(args.device)
 
     prefix = tk.encode_params(params.model_dump())
+    adjacency = params.adjacency.root if params.adjacency else None
     room_counts = {}
     bias_tokens = {}
     if "bedrooms" in raw:
@@ -109,6 +110,7 @@ def main():
             max_width=max_w,
             max_length=max_h,
             min_separation=0,
+            adjacency=adjacency,
         )
         if issues:
             if attempt < max_attempts - 1:
@@ -123,6 +125,7 @@ def main():
                 max_width=max_w,
                 max_length=max_h,
                 min_separation=0,
+                adjacency=adjacency,
             )
             if issues:
                 raise BoundaryViolationError(
@@ -130,12 +133,15 @@ def main():
                 )
 
         if args.min_separation > 0:
-            layout_json = enforce_min_separation(layout_json, args.min_separation)
+            layout_json = enforce_min_separation(
+                layout_json, args.min_separation, adjacency=adjacency
+            )
             issues = validate_layout(
                 layout_json,
                 max_width=max_w,
                 max_length=max_h,
                 min_separation=args.min_separation,
+                adjacency=adjacency,
             )
             if issues:
                 if attempt < max_attempts - 1:
@@ -150,6 +156,7 @@ def main():
                     max_width=max_w,
                     max_length=max_h,
                     min_separation=args.min_separation,
+                    adjacency=adjacency,
                 )
                 if issues:
                     raise BoundaryViolationError(
@@ -184,6 +191,7 @@ def main():
             max_width=max_w,
             max_length=max_h,
             min_separation=args.min_separation,
+            adjacency=adjacency,
         )
         if issues:
             raise BoundaryViolationError(
