@@ -113,9 +113,18 @@ def main() -> None:
     args = ap.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
-
-    params = json.load(open(args.params, "r", encoding="utf-8"))
-    layout = json.load(open(args.layout, "r", encoding="utf-8"))
+    try:
+        with open(args.params, "r", encoding="utf-8") as pf:
+            params = json.load(pf)
+    except (OSError, json.JSONDecodeError) as e:
+        log.error("Failed to read params file %s: %s", args.params, e)
+        sys.exit(1)
+    try:
+        with open(args.layout, "r", encoding="utf-8") as lf:
+            layout = json.load(lf)
+    except (OSError, json.JSONDecodeError) as e:
+        log.error("Failed to read layout file %s: %s", args.layout, e)
+        sys.exit(1)
 
     dims = params.get("dimensions") or {}
     max_w = float(dims.get("width", 40))
