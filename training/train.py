@@ -64,10 +64,22 @@ def ensure_dataset(train_path: str, val_path: str) -> bool:
 
     print("No training data found. Generating synthetic dataset...")
     try:
-        subprocess.run([sys.executable, "-m", "dataset.generate_dataset"], check=True, cwd=repo_root)
-        subprocess.run([sys.executable, "-m", "scripts.build_jsonl"], check=True, cwd=repo_root)
-    except Exception as e:  # pragma: no cover - best effort generation
-        print(f"Failed to build dataset: {e}")
+        subprocess.run(
+            [sys.executable, "-m", "dataset.generate_dataset"],
+            check=True,
+            cwd=repo_root,
+        )
+        subprocess.run(
+            [sys.executable, "-m", "scripts.build_jsonl"],
+            check=True,
+            cwd=repo_root,
+        )
+    except subprocess.CalledProcessError as e:  # pragma: no cover - best effort generation
+        cmd = e.cmd if isinstance(e.cmd, str) else " ".join(e.cmd)
+        print(f"Failed to run '{cmd}' (exit code {e.returncode})")
+        return False
+    except OSError as e:  # pragma: no cover - missing executable
+        print(f"Execution failed: {e}")
         return False
     return os.path.exists(train_path) and os.path.exists(val_path)
 
