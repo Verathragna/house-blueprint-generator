@@ -135,20 +135,20 @@ def check_connectivity(rooms: List[Dict]) -> List[str]:
 
 
 def check_adjacency(rooms: List[Dict], adjacency: Dict[str, List[str]]) -> List[str]:
-    """Ensure specified room pairs share a wall.
+    """Ensure each specified room type meets its adjacency requirements.
 
     Args:
         rooms: List of room dictionaries.
         adjacency: Mapping of room types to the list of room types that must
-            be adjacent to them.
+            share a wall with them.
 
     Returns:
         List of human-readable issue strings.
     """
 
-    type_map: Dict[str, List[Dict]] = {}
-    for r in rooms:
-        type_map.setdefault(r.get("type", "").lower(), []).append(r)
+    type_map: Dict[str, List[Tuple[int, Dict]]] = {}
+    for room_idx, room in enumerate(rooms):
+        type_map.setdefault(room.get("type", "").lower(), []).append((room_idx, room))
 
     issues: List[str] = []
     for room_type, required in (adjacency or {}).items():
@@ -163,10 +163,16 @@ def check_adjacency(rooms: List[Dict], adjacency: Dict[str, List[str]]) -> List[
                     f"Room {target} required to be adjacent to {room_type} is missing"
                 )
                 continue
-            if not any(
-                _shares_wall(r1, r2) for r1 in src_rooms for r2 in tgt_rooms
-            ):
-                issues.append(f"{room_type} must be adjacent to {target}")
+            for src_idx, src_room in src_rooms:
+                if any(_shares_wall(src_room, tgt_room) for _, tgt_room in tgt_rooms):
+                    continue
+                pos = src_room.get("position") or {}
+                x = pos.get("x", 0)
+                y = pos.get("y", 0)
+                label = src_room.get("type") or room_type
+                issues.append(
+                    f"{label} #{src_idx + 1} at ({x}, {y}) must share a wall with {target}"
+                )
     return issues
 
 
@@ -201,6 +207,31 @@ def check_separation(
                     f"Room {r1.get('type', 'Unknown')} is within {min_sep} of {r2.get('type', 'Unknown')}"
                 )
     return issues
+
+
+
+
+
+def resolve_overlaps(
+    layout: Dict,
+    adjacency: Optional[Dict[str, List[str]]] = None,
+    step: float = 0.5,
+    max_iterations: int = 5,
+) -> Dict:
+    """Attempt to separate overlapping rooms while preserving adjacency."""
+
+    rooms = (layout.get("layout") or {}).get("rooms", [])
+    if not rooms:
+        return layout
+
+    current_step = max(step, 1e-3)
+    for _ in range(max_iterations):
+        if not check_overlaps(rooms):
+            break
+        layout = enforce_min_separation(layout, current_step, adjacency=adjacency)
+        rooms = (layout.get("layout") or {}).get("rooms", [])
+        current_step *= 1.5
+    return layout
 
 
 def enforce_min_separation(
@@ -285,12 +316,43 @@ def enforce_min_separation(
                 if _too_close(rooms[i], rooms[j], min_sep):
                     ax1, ay1, ax2, ay2 = group_bounds(groups[gi])
                     bx1, by1, bx2, by2 = group_bounds(groups[gj])
-                    shift_x = ax2 + min_sep - bx1
-                    shift_y = ay2 + min_sep - by1
-                    if shift_x <= shift_y:
-                        move_group(groups[gj], shift_x, 0.0)
+                    axc = (ax1 + ax2) * 0.5
+                    bxc = (bx1 + bx2) * 0.5
+                    ayc = (ay1 + ay2) * 0.5
+                    byc = (by1 + by2) * 0.5
+
+                    candidates: List[Tuple[float, float]] = []
+
+                    if bxc >= axc:
+                        delta = ax2 + min_sep - bx1
+                        if delta > 0:
+                            candidates.append((delta, 0.0))
                     else:
-                        move_group(groups[gj], 0.0, shift_y)
+                        delta = bx2 + min_sep - ax1
+                        if delta > 0:
+                            candidates.append((-delta, 0.0))
+
+                    if byc >= ayc:
+                        delta = ay2 + min_sep - by1
+                        if delta > 0:
+                            candidates.append((0.0, delta))
+                    else:
+                        delta = by2 + min_sep - ay1
+                        if delta > 0:
+                            candidates.append((0.0, -delta))
+
+                    if not candidates:
+                        continue
+
+                    dx, dy = min(
+                        candidates,
+                        key=lambda shift: (
+                            abs(shift[0]) + abs(shift[1]),
+                            abs(shift[0]),
+                            abs(shift[1]),
+                        ),
+                    )
+                    move_group(groups[gj], dx, dy)
                     changed = True
                     break
             if changed:
@@ -340,5 +402,6 @@ __all__ = [
     "check_adjacency",
     "validate_layout",
     "enforce_min_separation",
+    "resolve_overlaps",
     "clamp_bounds",
 ]

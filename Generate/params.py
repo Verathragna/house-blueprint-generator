@@ -22,14 +22,39 @@ class Adjacency(RootModel[Dict[str, List[str]]]):
     @field_validator("root")
     @classmethod
     def _check_lists(cls, value: Dict[str, List[str]]) -> Dict[str, List[str]]:
+        case_map: Dict[str, str] = {}
+        adjacency_map: Dict[str, set[str]] = {}
         for room, adjacent in value.items():
-            if not isinstance(adjacent, list) or not all(
-                isinstance(a, str) for a in adjacent
-            ):
+            if not isinstance(adjacent, list) or not all(isinstance(a, str) for a in adjacent):
                 raise ValueError("Adjacency mapping must be a list of strings")
-            if len(adjacent) == 0:
-                raise ValueError(f"Adjacency list for '{room}' cannot be empty")
-        return value
+            room_label = room.strip()
+            if not room_label:
+                raise ValueError("Adjacency keys cannot be empty")
+            room_key = room_label.lower()
+            case_map.setdefault(room_key, room_label)
+            adjacency_map.setdefault(room_key, set())
+            seen: set[str] = set()
+            for entry in adjacent:
+                neighbor = entry.strip()
+                if not neighbor:
+                    raise ValueError(f"Adjacency entry for '{room_label}' cannot be empty")
+                neighbor_key = neighbor.lower()
+                if neighbor_key == room_key:
+                    raise ValueError(f"Adjacency for '{room_label}' cannot reference itself")
+                if neighbor_key in seen:
+                    continue
+                seen.add(neighbor_key)
+                case_map.setdefault(neighbor_key, neighbor)
+                adjacency_map[room_key].add(neighbor_key)
+        for room_key, neighbors in list(adjacency_map.items()):
+            for neighbor_key in neighbors:
+                adjacency_map.setdefault(neighbor_key, set()).add(room_key)
+        normalized: Dict[str, List[str]] = {}
+        for room_key, neighbors in adjacency_map.items():
+            room_label = case_map[room_key]
+            normalized[room_label] = sorted(case_map[nk] for nk in neighbors)
+        return normalized
+
 
 
 class Constraints(RootModel[Dict[str, float]]):

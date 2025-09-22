@@ -135,10 +135,12 @@ def greedy_decode(
                 counts[nxt] += 1
             if tokenizer:
                 tok = tokenizer.id_to_token.get(nxt, "")
-                if tok.startswith("W"):
+                if tok.startswith("W") and tok[1:].isdigit():
                     pending_w = int(tok[1:])
-                elif tok.startswith("L"):
+                elif tok.startswith("L") and tok[1:].isdigit():
                     pending_l = int(tok[1:])
+                elif tok.startswith("Y") and tok[1:].isdigit():
+                    pending_w = pending_l = None
                 elif tok.startswith("Y"):
                     pending_w = pending_l = None
             if nxt == EOS_ID:
@@ -195,10 +197,12 @@ def sample_decode(
                 counts[nxt] += 1
             if tokenizer:
                 tok = tokenizer.id_to_token.get(nxt, "")
-                if tok.startswith("W"):
+                if tok.startswith("W") and tok[1:].isdigit():
                     pending_w = int(tok[1:])
-                elif tok.startswith("L"):
+                elif tok.startswith("L") and tok[1:].isdigit():
                     pending_l = int(tok[1:])
+                elif tok.startswith("Y") and tok[1:].isdigit():
+                    pending_w = pending_l = None
                 elif tok.startswith("Y"):
                     pending_w = pending_l = None
             if nxt == EOS_ID:

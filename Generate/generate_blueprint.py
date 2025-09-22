@@ -8,7 +8,13 @@ from models.layout_transformer import LayoutTransformer
 from tokenizer.tokenizer import BlueprintTokenizer
 from models.decoding import decode
 from dataset.render_svg import render_layout_svg
-from evaluation.validators import enforce_min_separation, clamp_bounds, validate_layout
+from evaluation.validators import (
+    enforce_min_separation,
+    clamp_bounds,
+    validate_layout,
+    check_adjacency,
+    resolve_overlaps,
+)
 from evaluation.evaluate_sample import assert_room_counts, BoundaryViolationError
 from Generate.params import Params
 
@@ -42,6 +48,12 @@ def main():
         default=3,
         help="Maximum decode retries before clamping",
     )
+    ap.add_argument(
+        "--debug_dump",
+        type=str,
+        default=None,
+        help="Directory to write intermediate layouts for debugging",
+    )
     args = ap.parse_args()
 
     try:
@@ -65,8 +77,36 @@ def main():
     model.load_state_dict(ckpt["model"] if "model" in ckpt else ckpt)
     model.to(args.device)
 
+
+    debug_dump_dir = getattr(args, "debug_dump", None)
+    if debug_dump_dir:
+        try:
+            os.makedirs(debug_dump_dir, exist_ok=True)
+        except OSError as exc:
+            log.warning("Failed to ensure debug dump directory %s: %s", debug_dump_dir, exc)
+            debug_dump_dir = None
+
+    def dump_layout(layout_dict, label):
+        if not debug_dump_dir:
+            return
+        filename = os.path.join(debug_dump_dir, f"{args.out_prefix}_{label}.json")
+        try:
+            with open(filename, "w", encoding="utf-8") as fh:
+                json.dump(layout_dict, fh, indent=2)
+        except OSError as exc:
+            log.warning("Failed to write debug dump %s: %s", filename, exc)
+
     prefix = tk.encode_params(params.model_dump())
     adjacency = params.adjacency.root if params.adjacency else None
+
+    def has_overlap(issue_list):
+        return any("overlap" in msg.lower() for msg in (issue_list or []))
+
+    def collect_adjacency_issues(layout_dict):
+        if not adjacency:
+            return []
+        rooms = (layout_dict.get("layout") or {}).get("rooms", [])
+        return check_adjacency(rooms, adjacency)
     room_counts = {}
     bias_tokens = {}
     if "bedrooms" in raw:
@@ -90,6 +130,7 @@ def main():
     layout_json = None
     missing = []
     for attempt in range(max_attempts):
+        overlap_fix_used = False
         layout_tokens = decode(
             model,
             prefix,
@@ -104,7 +145,9 @@ def main():
             max_length=max_h,
         )
         layout_json = tk.decode_layout_tokens(layout_tokens)
+        dump_layout(layout_json, f"attempt{attempt + 1}_raw")
 
+        adjacency_issues = collect_adjacency_issues(layout_json)
         issues = validate_layout(
             layout_json,
             max_width=max_w,
@@ -112,6 +155,18 @@ def main():
             min_separation=0,
             adjacency=adjacency,
         )
+        if issues and not overlap_fix_used and has_overlap(issues):
+            layout_json = resolve_overlaps(layout_json, adjacency=adjacency)
+            dump_layout(layout_json, f"attempt{attempt + 1}_overlap_fix")
+            overlap_fix_used = True
+            adjacency_issues = collect_adjacency_issues(layout_json)
+            issues = validate_layout(
+                layout_json,
+                max_width=max_w,
+                max_length=max_h,
+                min_separation=0,
+                adjacency=adjacency,
+            )
         if issues:
             if attempt < max_attempts - 1:
                 print(
@@ -119,7 +174,13 @@ def main():
                     file=sys.stderr,
                 )
                 continue
+            if adjacency_issues:
+                dump_layout(layout_json, f"attempt{attempt + 1}_failed")
+                raise BoundaryViolationError(
+                    "Layout validation failed: " + "; ".join(issues)
+                )
             layout_json = clamp_bounds(layout_json, max_w, max_h)
+            dump_layout(layout_json, f"attempt{attempt + 1}_clamped")
             issues = validate_layout(
                 layout_json,
                 max_width=max_w,
@@ -128,6 +189,7 @@ def main():
                 adjacency=adjacency,
             )
             if issues:
+                dump_layout(layout_json, f"attempt{attempt + 1}_failed")
                 raise BoundaryViolationError(
                     "Layout validation failed after clamping: " + "; ".join(issues)
                 )
@@ -136,6 +198,8 @@ def main():
             layout_json = enforce_min_separation(
                 layout_json, args.min_separation, adjacency=adjacency
             )
+            dump_layout(layout_json, f"attempt{attempt + 1}_post_sep")
+            adjacency_issues = collect_adjacency_issues(layout_json)
             issues = validate_layout(
                 layout_json,
                 max_width=max_w,
@@ -143,6 +207,18 @@ def main():
                 min_separation=args.min_separation,
                 adjacency=adjacency,
             )
+            if issues and not overlap_fix_used and has_overlap(issues):
+                layout_json = resolve_overlaps(layout_json, adjacency=adjacency)
+                dump_layout(layout_json, f"attempt{attempt + 1}_overlap_fix")
+                overlap_fix_used = True
+                adjacency_issues = collect_adjacency_issues(layout_json)
+                issues = validate_layout(
+                    layout_json,
+                    max_width=max_w,
+                    max_length=max_h,
+                    min_separation=args.min_separation,
+                    adjacency=adjacency,
+                )
             if issues:
                 if attempt < max_attempts - 1:
                     print(
@@ -150,7 +226,13 @@ def main():
                         file=sys.stderr,
                     )
                     continue
+                if adjacency_issues:
+                    dump_layout(layout_json, f"attempt{attempt + 1}_failed")
+                    raise BoundaryViolationError(
+                        "Layout validation failed: " + "; ".join(issues)
+                    )
                 layout_json = clamp_bounds(layout_json, max_w, max_h)
+                dump_layout(layout_json, f"attempt{attempt + 1}_clamped")
                 issues = validate_layout(
                     layout_json,
                     max_width=max_w,
@@ -159,6 +241,7 @@ def main():
                     adjacency=adjacency,
                 )
                 if issues:
+                    dump_layout(layout_json, f"attempt{attempt + 1}_failed")
                     raise BoundaryViolationError(
                         "Layout validation failed after clamping: "
                         + "; ".join(issues)
@@ -186,6 +269,7 @@ def main():
                 }
             )
         layout_json = clamp_bounds(layout_json, max_w, max_h)
+        dump_layout(layout_json, "placeholders_clamped")
         issues = validate_layout(
             layout_json,
             max_width=max_w,
@@ -194,6 +278,7 @@ def main():
             adjacency=adjacency,
         )
         if issues:
+            dump_layout(layout_json, "placeholders_failed")
             raise BoundaryViolationError(
                 "Layout validation failed after injecting placeholders: "
                 + "; ".join(issues)
@@ -203,6 +288,19 @@ def main():
     json_path = f"{args.out_prefix}.json"
     svg_path = f"{args.out_prefix}.svg"
     layout_json = clamp_bounds(layout_json, max_w, max_h)
+    dump_layout(layout_json, "final")
+    final_issues = validate_layout(
+        layout_json,
+        max_width=max_w,
+        max_length=max_h,
+        min_separation=args.min_separation,
+        adjacency=adjacency,
+    )
+    if final_issues:
+        raise BoundaryViolationError(
+            "Layout validation failed before writing output: "
+            + "; ".join(final_issues)
+        )
     try:
         with open(json_path, "w", encoding="utf-8") as f:
             json.dump(layout_json, f, indent=2)
