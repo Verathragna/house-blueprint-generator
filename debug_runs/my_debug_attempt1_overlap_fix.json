@@ -1,0 +1,149 @@
+{
+  "layout": {
+    "rooms": [
+      {
+        "type": "Garage",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "size": {
+          "width": 20,
+          "length": 20
+        }
+      },
+      {
+        "type": "Bathroom",
+        "position": {
+          "x": 0.0,
+          "y": -10.53125
+        },
+        "size": {
+          "width": 8,
+          "length": 8
+        }
+      },
+      {
+        "type": "Bathroom",
+        "position": {
+          "x": 0.0,
+          "y": -10.53125
+        },
+        "size": {
+          "width": 8,
+          "length": 8
+        }
+      },
+      {
+        "type": "Bathroom",
+        "position": {
+          "x": 0.0,
+          "y": -10.53125
+        },
+        "size": {
+          "width": 8,
+          "length": 8
+        }
+      },
+      {
+        "type": "Bathroom",
+        "position": {
+          "x": 0.0,
+          "y": -10.53125
+        },
+        "size": {
+          "width": 8,
+          "length": 8
+        }
+      },
+      {
+        "type": "Bedroom",
+        "position": {
+          "x": 0.0,
+          "y": -14.53125
+        },
+        "size": {
+          "width": 12,
+          "length": 12
+        }
+      },
+      {
+        "type": "Bedroom",
+        "position": {
+          "x": 0.0,
+          "y": -14.53125
+        },
+        "size": {
+          "width": 12,
+          "length": 12
+        }
+      },
+      {
+        "type": "Bedroom",
+        "position": {
+          "x": 0.0,
+          "y": -14.53125
+        },
+        "size": {
+          "width": 12,
+          "length": 12
+        }
+      },
+      {
+        "type": "Bedroom",
+        "position": {
+          "x": 0.0,
+          "y": -10.53125
+        },
+        "size": {
+          "width": 12,
+          "length": 8
+        }
+      },
+      {
+        "type": "Dining Room",
+        "position": {
+          "x": 0.0,
+          "y": -12.53125
+        },
+        "size": {
+          "width": 12,
+          "length": 10
+        }
+      },
+      {
+        "type": "Kitchen",
+        "position": {
+          "x": 0.0,
+          "y": -14.53125
+        },
+        "size": {
+          "width": 14,
+          "length": 12
+        }
+      },
+      {
+        "type": "Living Room",
+        "position": {
+          "x": 0.0,
+          "y": -16.53125
+        },
+        "size": {
+          "width": 16,
+          "length": 14
+        }
+      },
+      {
+        "type": "Laundry Room",
+        "position": {
+          "x": 8.0,
+          "y": -10.53125
+        },
+        "size": {
+          "width": 8,
+          "length": 8
+        }
+      }
+    ]
+  }
+}

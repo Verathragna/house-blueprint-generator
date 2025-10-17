@@ -8,6 +8,7 @@ describing any issues that are found.
 
 from __future__ import annotations
 
+import logging
 from typing import Dict, List, Optional, Set, Tuple
 
 
@@ -217,6 +218,7 @@ def resolve_overlaps(
     adjacency: Optional[Dict[str, List[str]]] = None,
     step: float = 0.5,
     max_iterations: int = 5,
+    separation_iterations: int = 100,
 ) -> Dict:
     """Attempt to separate overlapping rooms while preserving adjacency."""
 
@@ -225,17 +227,31 @@ def resolve_overlaps(
         return layout
 
     current_step = max(step, 1e-3)
-    for _ in range(max_iterations):
+    logger = logging.getLogger(__name__)
+    for iteration in range(max_iterations):
         if not check_overlaps(rooms):
             break
-        layout = enforce_min_separation(layout, current_step, adjacency=adjacency)
+        layout = enforce_min_separation(
+            layout,
+            current_step,
+            adjacency=adjacency,
+            max_iterations=separation_iterations,
+        )
         rooms = (layout.get("layout") or {}).get("rooms", [])
         current_step *= 1.5
+    else:
+        logger.warning(
+            "resolve_overlaps reached iteration limit (%s) while overlaps remain",
+            max_iterations,
+        )
     return layout
 
 
 def enforce_min_separation(
-    layout: Dict, min_sep: float = 1.0, adjacency: Optional[Dict[str, List[str]]] = None
+    layout: Dict,
+    min_sep: float = 1.0,
+    adjacency: Optional[Dict[str, List[str]]] = None,
+    max_iterations: int = 100,
 ) -> Dict:
     """Shift rooms to ensure a minimum separation while preserving adjacency.
 
@@ -306,8 +322,11 @@ def enforce_min_separation(
             pos["y"] += dy
 
     changed = True
-    while changed:
+    iterations = 0
+    logger = logging.getLogger(__name__)
+    while changed and iterations < max_iterations:
         changed = False
+        iterations += 1
         for i in range(len(rooms)):
             for j in range(i + 1, len(rooms)):
                 gi, gj = group_id[i], group_id[j]
@@ -357,6 +376,11 @@ def enforce_min_separation(
                     break
             if changed:
                 break
+    if changed:
+        logger.warning(
+            "enforce_min_separation reached iteration limit (%s) with residual proximity",
+            max_iterations,
+        )
     return layout
 
 

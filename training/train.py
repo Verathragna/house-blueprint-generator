@@ -164,8 +164,13 @@ def train(
             list_and_cleanup(keep_last_n=3)
             ckpt_path = os.path.join(CHECKPOINT_DIR, f"epoch_{ep}.pt")
             torch.save({"model": model.state_dict(), "optimizer": opt.state_dict(), "epoch": ep}, ckpt_path)
+            latest_weights_path = os.path.join(CHECKPOINT_DIR, "model_latest.pth")
+            torch.save(model.state_dict(), latest_weights_path)
             if save_weights:
-                torch.save(model.state_dict(), os.path.join(CHECKPOINT_DIR, "model_latest.pth"))
+                torch.save(
+                    model.state_dict(),
+                    os.path.join(CHECKPOINT_DIR, f"model_epoch_{ep}_weights.pth"),
+                )
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
@@ -176,7 +181,7 @@ if __name__ == "__main__":
     ap.add_argument("--learning_rate", type=float, default=1e-4)
     ap.add_argument("--device", type=str, default="cpu")
     ap.add_argument("--resume", type=str, default=None, help="path to checkpoint to resume from")
-    ap.add_argument("--save_weights", action="store_true", help="also save latest model weights to model_latest.pth")
+    ap.add_argument("--save_weights", action="store_true", help="also save per-epoch raw weight files")
     args = ap.parse_args()
     train(
         args.epochs,

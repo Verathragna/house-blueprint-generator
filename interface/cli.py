@@ -26,7 +26,7 @@ def main():
     parser.add_argument(
         "--strategy",
         default="greedy",
-        choices=["greedy", "sample", "beam"],
+        choices=["greedy", "sample", "beam", "guided"],
         help="Decoding strategy",
     )
     parser.add_argument(
@@ -40,6 +40,30 @@ def main():
         type=float,
         default=1.0,
         help="Minimum room separation; 0 disables",
+    )
+    parser.add_argument(
+        "--guided_topk",
+        type=int,
+        default=8,
+        help="Top-K expansion per step when using guided decoding",
+    )
+    parser.add_argument(
+        "--guided_beam",
+        type=int,
+        default=8,
+        help="Beam width when using guided decoding",
+    )
+    parser.add_argument(
+        "--refine_iters",
+        type=int,
+        default=0,
+        help="Iterations for post-decoding refinement (0 disables)",
+    )
+    parser.add_argument(
+        "--refine_temp",
+        type=float,
+        default=5.0,
+        help="Initial temperature for refinement search",
     )
     args = parser.parse_args()
 
@@ -60,6 +84,12 @@ def main():
         "beam_size": args.beam_size,
         "min_separation": args.min_separation,
     }
+    if args.strategy == "guided":
+        payload["guided_topk"] = args.guided_topk
+        payload["guided_beam"] = args.guided_beam
+    if args.refine_iters > 0:
+        payload["refine_iterations"] = args.refine_iters
+        payload["refine_temperature"] = args.refine_temp
     headers = {"X-API-Key": args.api_key}
     url = f"{args.api.rstrip('/')}/generate"
     try:

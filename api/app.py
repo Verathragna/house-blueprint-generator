@@ -31,6 +31,7 @@ from models.decoding import decode
 from dataset.render_svg import render_layout_svg
 from evaluation.validators import enforce_min_separation, clamp_bounds, validate_layout
 from evaluation.evaluate_sample import assert_room_counts, BoundaryViolationError
+from evaluation.refinement import refine_layout
 from Generate.params import Params
 
 CHECKPOINT = os.path.join(REPO_ROOT, "checkpoints", "model_latest.pth")
@@ -93,10 +94,14 @@ class Metadata(BaseModel):
 
 class GenerateRequest(BaseModel):
     params: Params
-    strategy: str = Field(default="greedy", pattern="^(greedy|beam|sample)$")
+    strategy: str = Field(default="greedy", pattern="^(greedy|beam|sample|guided)$")
     temperature: float = Field(default=1.0, ge=0.0)
     beam_size: int = Field(default=5, ge=1)
     min_separation: float = Field(default=1.0, ge=0.0)
+    guided_topk: int = Field(default=8, ge=1)
+    guided_beam: int = Field(default=8, ge=1)
+    refine_iterations: int = Field(default=0, ge=0)
+    refine_temperature: float = Field(default=5.0, ge=0.0)
 
 
 class GenerateResponse(BaseModel):
@@ -231,13 +236,25 @@ def _check_rate_limit(api_key: str) -> Tuple[int, int]:
     return RATE_LIMIT, remaining
 
 # Background job queue and status store
-_task_queue: "queue.Queue[Tuple[str, Params, dict, str, float, int, float]]" = queue.Queue()
+_task_queue: "queue.Queue[Tuple[Any, ...]]" = queue.Queue()
 _jobs: Dict[str, Dict[str, Any]] = {}
 
 
 def _worker():
     while True:
-        job_id, params, raw_params, strategy, temperature, beam_size, min_sep = _task_queue.get()
+        (
+            job_id,
+            params,
+            raw_params,
+            strategy,
+            temperature,
+            beam_size,
+            min_sep,
+            guided_topk,
+            guided_beam,
+            refine_iters,
+            refine_temp,
+        ) = _task_queue.get()
         job = _jobs[job_id]
         try:
             job["status"] = "in_progress"
@@ -266,24 +283,53 @@ def _worker():
             max_w = float(dims.get("width", 40))
             max_h = float(dims.get("depth", dims.get("height", 40)))
 
+            adjacency_map = params.adjacency.root if params.adjacency else None
+            adjacency_requirements = _tokenizer.adjacency_requirements_from_params(adjacency_map)
+
+            def partial_validator(layout_dict):
+                rooms = (layout_dict.get("layout") or {}).get("rooms", [])
+                if not rooms:
+                    return []
+                return validate_layout(
+                    layout_dict,
+                    max_width=max_w,
+                    max_length=max_h,
+                    min_separation=min_sep,
+                    adjacency=adjacency_map,
+                    require_connectivity=False,
+                )
+
             max_attempts = 3
             layout_json = None
             missing = []
+            decode_kwargs = {
+                "max_len": 160,
+                "strategy": strategy,
+                "temperature": temperature,
+                "beam_size": beam_size,
+                "required_counts": room_counts,
+                "bias_tokens": bias_tokens,
+                "tokenizer": _tokenizer,
+                "max_width": max_w,
+                "max_length": max_h,
+                "adjacency_requirements": adjacency_requirements,
+            }
+            if strategy == "guided":
+                decode_kwargs.update(
+                    {
+                        "constraint_validator": partial_validator,
+                        "validator_min_rooms": 1,
+                        "guided_top_k": guided_topk,
+                        "guided_beam_size": guided_beam,
+                    }
+                )
             for attempt in range(max_attempts):
                 job["logs"].append("Decoding layout")
                 job["event"].set()
                 layout_tokens = decode(
                     model,
                     prefix,
-                    max_len=160,
-                    strategy=strategy,
-                    temperature=temperature,
-                    beam_size=beam_size,
-                    required_counts=room_counts,
-                    bias_tokens=bias_tokens,
-                    tokenizer=_tokenizer,
-                    max_width=max_w,
-                    max_length=max_h,
+                    **decode_kwargs,
                 )
                 layout_json = _tokenizer.decode_layout_tokens(layout_tokens)
 
@@ -292,6 +338,7 @@ def _worker():
                     max_width=max_w,
                     max_length=max_h,
                     min_separation=0,
+                    adjacency=adjacency_map,
                 )
                 if issues:
                     if attempt < max_attempts - 1:
@@ -306,6 +353,7 @@ def _worker():
                         max_width=max_w,
                         max_length=max_h,
                         min_separation=0,
+                        adjacency=adjacency_map,
                     )
                     if issues:
                         raise BoundaryViolationError(
@@ -319,6 +367,7 @@ def _worker():
                         max_width=max_w,
                         max_length=max_h,
                         min_separation=min_sep,
+                        adjacency=adjacency_map,
                     )
                     if issues:
                         if attempt < max_attempts - 1:
@@ -333,6 +382,7 @@ def _worker():
                             max_width=max_w,
                             max_length=max_h,
                             min_separation=min_sep,
+                            adjacency=adjacency_map,
                         )
                         if issues:
                             raise BoundaryViolationError(
@@ -385,6 +435,35 @@ def _worker():
             svg_path = os.path.join(out_dir, svg_filename)
 
             layout_json = clamp_bounds(layout_json, max_w, max_h)
+
+            if refine_iters > 0:
+                job["logs"].append("Refining layout")
+                job["event"].set()
+                refined = refine_layout(
+                    layout_json,
+                    max_width=max_w,
+                    max_length=max_h,
+                    min_separation=min_sep,
+                    adjacency=adjacency_map,
+                    iterations=refine_iters,
+                    temperature=refine_temp,
+                )
+                refined = clamp_bounds(refined, max_w, max_h)
+                refined_issues = validate_layout(
+                    refined,
+                    max_width=max_w,
+                    max_length=max_h,
+                    min_separation=min_sep,
+                    adjacency=adjacency_map,
+                )
+                if not refined_issues:
+                    layout_json = refined
+                    job["logs"].append("Refinement succeeded")
+                else:
+                    job["logs"].append(
+                        "Refinement produced issues: " + "; ".join(refined_issues)
+                    )
+                job["event"].set()
 
             with open(json_path, "w", encoding="utf-8") as f:
                 import json as pyjson
@@ -541,7 +620,21 @@ def generate(
         "event": threading.Event(),
     }
     raw_params = req.params.model_dump(exclude_unset=True)
-    _task_queue.put((job_id, params, raw_params, strategy, temperature, beam_size, min_sep))
+    _task_queue.put(
+        (
+            job_id,
+            params,
+            raw_params,
+            strategy,
+            temperature,
+            beam_size,
+            min_sep,
+            req.guided_topk,
+            req.guided_beam,
+            req.refine_iterations,
+            req.refine_temperature,
+        )
+    )
     _jobs[job_id]["event"].set()
     processing_time = time.perf_counter() - start
     return JobResponse(job_id=job_id, metadata=Metadata(processing_time=processing_time))

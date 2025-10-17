@@ -25,6 +25,12 @@ python scripts/build_jsonl.py --seed 42 --strict            # shuffle into train
 
 Use the same `--seed` value for both commands to ensure full reproducibility.
 
+By default the generator rotates through several circulation templates (linear
+chains, central corridors, and L-shaped wings) to encourage more realistic room
+adjacencies. Override the sampler with `--patterns chain,corridor,l_shape` or
+pick a single pattern when you want a focused dataset. You can also supply `--external_dir`
+to ingest curated floor plans alongside the synthetic samples.
+
 All layouts are scaled to fit within a 40×40 coordinate space. Rooms whose
 positions or dimensions would exceed these bounds are scaled down before being
 written. The preprocessing step in `scripts/build_jsonl.py` verifies that every
@@ -52,21 +58,58 @@ for any detected problems.
 
 Train the transformer using the prepared JSONL files. The example below trains
 for 10 epochs with a batch size of 16 on the default device (CPU unless CUDA is
-available):
+available). Each epoch updates `checkpoints/model_latest.pth`, so inference can
+run immediately after training finishes. Pass `--save_weights` if you also want
+per-epoch raw weight snapshots saved alongside the optimizer state checkpoints.
 
 ```bash
 python training/train.py --epochs 10 --batch 16
 ```
 
+After supervised training, you can run feedback-driven fine-tuning to penalise
+layouts that still trigger validator issues:
+
+```bash
+python training/rl_finetune.py --episodes 2000 --batch-size 4 \
+       --checkpoint-in checkpoints/model_latest.pth \
+       --checkpoint-out checkpoints/model_rl_latest.pth
+```
+
+The script samples parameters, generates layouts, logs validator feedback to
+`logs/rl_feedback.log`, and applies a reward that favours overlap-free, fully
+specified floor plans.
+
 ## Inference (CPU/GPU)
 
 ### Command Line
 
-Run local generation on CPU or GPU by setting the `--device` flag:
+Run local generation on CPU or GPU by setting the `--device` flag. The script
+uses `checkpoints/model_latest.pth` by default, but it now falls back to the
+newest `epoch_*.pt` checkpoint if the latest weights are missing. Provide
+`--checkpoint` to point at a specific file when testing alternate runs:
 
 ```bash
-python Generate/generate_blueprint.py --params_json sample_params.json --out_prefix my_blueprint --device cuda
+python Generate/generate_blueprint.py --params_json sample_params.json \
+       --out_prefix my_blueprint --device cuda
+# or explicitly pick a checkpoint:
+python Generate/generate_blueprint.py --params_json sample_params.json \
+       --checkpoint checkpoints/epoch_9.pt
 ```
+
+Layouts now emit adjacency edge tokens, so providing an `adjacency` block in
+your input JSON will bias decoding toward the requested room neighbors. The
+tokenizer also writes the realised adjacencies back into the generated layout
+for downstream checks.
+
+Use `--strategy guided` (optionally with `--guided_topk` and `--guided_beam`) to
+enable constraint-guided search that runs geometry validation mid-decode and
+prunes invalid branches before they complete.
+
+Add `--refine_iters` and `--refine_temp` to run a post-decoding simulated-annealing
+pass that nudges rooms apart, clamps bounds, and respects adjacency goals before
+writing outputs.
+
+Capture validator feedback for future RL fine-tuning with `--issues_log logs/run_issues.jsonl` while you experiment.
 
 Decoding runs `validate_layout` after each attempt to ensure rooms stay within
 the requested bounds. If any room exceeds the canvas, the script retries up to
