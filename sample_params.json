@@ -1,9 +1,17 @@
 {
   "houseStyle": "Craftsman",
-  "bedrooms": 4,
+  "bedrooms": 3,
   "bathrooms": {
-    "full": 3,
+    "full": 2,
     "half": 1
+  },
+  "kitchen": 1,
+  "livingRooms": 1,
+  "diningRooms": 1,
+  "laundryRooms": 1,
+  "dimensions": {
+    "width": 40,
+    "depth": 35
   },
   "foundationType": "basement",
   "bonusRoom": true,

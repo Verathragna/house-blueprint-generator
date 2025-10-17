@@ -219,6 +219,8 @@ def resolve_overlaps(
     step: float = 0.5,
     max_iterations: int = 5,
     separation_iterations: int = 100,
+    max_width: float = 40,
+    max_length: float = 40,
 ) -> Dict:
     """Attempt to separate overlapping rooms while preserving adjacency."""
 
@@ -236,7 +238,11 @@ def resolve_overlaps(
             current_step,
             adjacency=adjacency,
             max_iterations=separation_iterations,
+            max_width=max_width,
+            max_length=max_length,
         )
+        # Clamp bounds after each separation attempt to keep rooms within limits
+        layout = clamp_bounds(layout, max_width, max_length)
         rooms = (layout.get("layout") or {}).get("rooms", [])
         current_step *= 1.5
     else:
@@ -252,6 +258,8 @@ def enforce_min_separation(
     min_sep: float = 1.0,
     adjacency: Optional[Dict[str, List[str]]] = None,
     max_iterations: int = 100,
+    max_width: float = 40.0,
+    max_length: float = 40.0,
 ) -> Dict:
     """Shift rooms to ensure a minimum separation while preserving adjacency.
 
@@ -318,8 +326,20 @@ def enforce_min_separation(
     def move_group(indices: Set[int], dx: float, dy: float) -> None:
         for idx in indices:
             pos = rooms[idx]["position"]
-            pos["x"] += dx
-            pos["y"] += dy
+            size = rooms[idx].get("size", {})
+            w = float(size.get("width", 0))
+            l = float(size.get("length", 0))
+            
+            # Calculate new position
+            new_x = pos["x"] + dx
+            new_y = pos["y"] + dy
+            
+            # Clamp to bounds
+            new_x = max(0.0, min(new_x, max_width - w))
+            new_y = max(0.0, min(new_y, max_length - l))
+            
+            pos["x"] = new_x
+            pos["y"] = new_y
 
     changed = True
     iterations = 0
