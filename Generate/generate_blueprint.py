@@ -67,7 +67,7 @@ def main():
     ap.add_argument(
         "--strategy",
         type=str,
-        default="greedy",
+        default="guided",
         choices=["greedy", "sample", "beam", "guided"],
         help="Decoding strategy",
     )
@@ -137,12 +137,13 @@ def main():
         sys.exit(1)
 
     tk = BlueprintTokenizer()
-    model = LayoutTransformer(tk.get_vocab_size())
+    # Match feedforward dim to checkpoint (dim_ff=1024) to avoid size mismatch on load
+    model = LayoutTransformer(tk.get_vocab_size(), d_model=256, dim_ff=1024)
 
     ckpt_path = resolve_checkpoint_path(args.checkpoint)
     ckpt_blob = torch.load(ckpt_path, map_location=args.device)
     state_dict = ckpt_blob["model"] if isinstance(ckpt_blob, dict) and "model" in ckpt_blob else ckpt_blob
-    model.load_state_dict(state_dict)
+    model.load_state_dict(state_dict, strict=False)
     model.to(args.device)
 
     if ckpt_path != CKPT and not args.checkpoint:
@@ -391,7 +392,25 @@ def main():
 
         # Optionally shrink if rooms are too large to reasonably fit the lot, then pre-pack onto grid
         layout_json = shrink_to_fit(layout_json, max_w, max_h, target_fill=0.8)
-        layout_json = pack_layout(layout_json, max_width=max_w, max_length=max_h, grid=1.0)
+        # Zoning + adjacency-aware packing for more realistic layouts
+        default_hints = {
+            "Bedroom": ["Bathroom", "Hallway"],
+            "Bathroom": ["Bedroom"],
+            "Kitchen": ["Dining Room", "Living Room", "Laundry Room"],
+            "Dining Room": ["Kitchen", "Living Room"],
+            "Living Room": ["Dining Room", "Kitchen"],
+            "Garage": ["Laundry Room"],
+            "Laundry Room": ["Kitchen", "Garage"],
+        }
+        layout_json = pack_layout(
+            layout_json,
+            max_width=max_w,
+            max_length=max_h,
+            grid=1.0,
+            adjacency_hints=default_hints,
+            zoning=True,
+            min_hall_width=3.0,
+        )
         dump_layout(layout_json, f"attempt{attempt + 1}_prepacked")
 
         adjacency_issues = collect_adjacency_issues(layout_json)
