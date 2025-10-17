@@ -12,3 +12,10 @@ generated/
 .env
 .DS_Store
 interface/web/node_modules/
+
+# Generated test artifacts
+test_*.json
+test_*.svg
+
+# Warp local doc
+WARP.md

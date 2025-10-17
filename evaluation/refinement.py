@@ -153,7 +153,12 @@ def refine_layout(
         return layout
 
     working = clamp_bounds(working, max_width=max_width, max_length=max_length)
-    working = resolve_overlaps(working, adjacency=adjacency)
+    working = resolve_overlaps(
+        working,
+        adjacency=adjacency,
+        max_width=max_width,
+        max_length=max_length,
+    )
 
     rooms = (working.get("layout") or {}).get("rooms", [])
     if not rooms:
@@ -214,7 +219,12 @@ def refine_layout(
             pos["y"] = round(bounds_before[1])
 
     best_layout = clamp_bounds(best_layout, max_width=max_width, max_length=max_length)
-    best_layout = resolve_overlaps(best_layout, adjacency=adjacency)
+    best_layout = resolve_overlaps(
+        best_layout,
+        adjacency=adjacency,
+        max_width=max_width,
+        max_length=max_length,
+    )
     return best_layout
 
 
