@@ -1,4 +1,4 @@
-import os, sys, json, argparse, re, torch, subprocess
+import os, sys, json, argparse, re, torch, subprocess, math
 from torch.utils.data import Dataset, DataLoader
 from torch.nn.utils.rnn import pad_sequence
 
@@ -65,12 +65,24 @@ def ensure_dataset(train_path: str, val_path: str) -> bool:
     print("No training data found. Generating synthetic dataset...")
     try:
         subprocess.run(
-            [sys.executable, "-m", "dataset.generate_dataset"],
+            [
+                sys.executable,
+                "-m",
+                "dataset.generate_dataset",
+                "--augment",
+                "--patterns",
+                "chain,corridor,l_shape,central_corridor",
+            ],
             check=True,
             cwd=repo_root,
         )
         subprocess.run(
-            [sys.executable, "-m", "scripts.build_jsonl"],
+            [
+                sys.executable,
+                "-m",
+                "scripts.build_jsonl",
+                "--augment",
+            ],
             check=True,
             cwd=repo_root,
         )
@@ -84,11 +96,11 @@ def ensure_dataset(train_path: str, val_path: str) -> bool:
     return os.path.exists(train_path) and os.path.exists(val_path)
 
 def train(
-    epochs=10,
+    epochs=20,
     batch_size=16,
-    lr=1e-4,
-    layers=4,
-    hidden_size=128,
+    lr=2e-4,
+    layers=6,
+    hidden_size=256,
     device="cpu",
     resume=None,
     save_weights=False,
@@ -120,8 +132,9 @@ def train(
         num_layers=layers,
         dim_ff=hidden_size * 4,
     ).to(device)
-    opt = torch.optim.Adam(model.parameters(), lr=lr)
-    crit = torch.nn.CrossEntropyLoss(ignore_index=PAD_ID)
+    opt = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=0.01)
+    crit = torch.nn.CrossEntropyLoss(ignore_index=PAD_ID, label_smoothing=0.1)
+    scaler = torch.cuda.amp.GradScaler(enabled=torch.cuda.is_available() and str(device) != "cpu")
 
     start_epoch = 0
     if resume and os.path.exists(resume):
@@ -137,20 +150,38 @@ def train(
                         state[k] = v.to(device)
         start_epoch = checkpoint.get("epoch", -1) + 1
 
+    # LR scheduler: linear warmup then cosine decay across all steps
+    total_steps = epochs * max(1, len(train_loader))
+    warmup_steps = max(1, int(0.1 * total_steps))
+    def lr_lambda(step):
+        if step < warmup_steps:
+            return float(step) / float(max(1, warmup_steps))
+        progress = float(step - warmup_steps) / float(max(1, total_steps - warmup_steps))
+        return 0.5 * (1.0 + math.cos(math.pi * progress))
+    scheduler = torch.optim.lr_scheduler.LambdaLR(opt, lr_lambda)
+
+    global_step = 0
+
     def run_epoch(loader, train_mode=True):
+        nonlocal global_step
         model.train(train_mode)
         total = 0.0
         for x, y, mask in loader:
             x = x.to(device)
             y = y.to(device)
             mask = mask.to(device)
-            logits = model(x, key_padding_mask=mask)
-            loss = crit(logits.reshape(-1, vocab_size), y.reshape(-1))
+            with torch.cuda.amp.autocast(enabled=scaler.is_enabled()):
+                logits = model(x, key_padding_mask=mask)
+                loss = crit(logits.reshape(-1, vocab_size), y.reshape(-1))
             if train_mode:
-                opt.zero_grad()
-                loss.backward()
+                opt.zero_grad(set_to_none=True)
+                scaler.scale(loss).backward()
+                scaler.unscale_(opt)
                 torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-                opt.step()
+                scaler.step(opt)
+                scaler.update()
+                scheduler.step()
+                global_step += 1
             total += loss.item()
         return total / max(1, len(loader))
 
@@ -174,11 +205,11 @@ def train(
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--epochs", type=int, default=20)
+    ap.add_argument("--epochs", type=int, default=30)
     ap.add_argument("--batch", type=int, default=16)
-    ap.add_argument("--layers", type=int, default=4)
-    ap.add_argument("--hidden_size", type=int, default=128)
-    ap.add_argument("--learning_rate", type=float, default=1e-4)
+    ap.add_argument("--layers", type=int, default=6)
+    ap.add_argument("--hidden_size", type=int, default=256)
+    ap.add_argument("--learning_rate", type=float, default=2e-4)
     ap.add_argument("--device", type=str, default="cpu")
     ap.add_argument("--resume", type=str, default=None, help="path to checkpoint to resume from")
     ap.add_argument("--save_weights", action="store_true", help="also save per-epoch raw weight files")

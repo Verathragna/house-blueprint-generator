@@ -19,7 +19,18 @@ class BlueprintTokenizer:
     for topology-aware adjacency tokens.
     """
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        pos_step: int = 2,
+        pos_max: int = 40,
+        size_buckets_w: Tuple[int, ...] = (10, 12, 14, 16, 18, 20),
+        size_buckets_l: Tuple[int, ...] = (8, 10, 12, 14, 16, 20),
+    ) -> None:
+        self.pos_step = int(pos_step)
+        self.pos_max = int(pos_max)
+        self.size_buckets_w = tuple(int(x) for x in size_buckets_w)
+        self.size_buckets_l = tuple(int(x) for x in size_buckets_l)
         self.room_token_names: List[str] = [
             "BEDROOM",
             "BATHROOM",
@@ -67,19 +78,13 @@ class BlueprintTokenizer:
             "STYLE_CRAFTSMAN",
             "STYLE_COLONIAL",
             "STYLE_MODERN",
-            "W10",
-            "W12",
-            "W14",
-            "W16",
-            "W18",
-            "W20",
-            "L8",
-            "L10",
-            "L12",
-            "L14",
-            "L16",
-            "L20",
         ]
+
+        # Add discrete size buckets (W/L) in a fixed order
+        for w in self.size_buckets_w:
+            base_tokens.append(f"W{w}")
+        for l in self.size_buckets_l:
+            base_tokens.append(f"L{l}")
 
         # Map common user-facing terms to internal tokens
         self.term_to_token: Dict[str, str] = {
@@ -125,11 +130,10 @@ class BlueprintTokenizer:
 
         tokens: List[str] = list(base_tokens)
 
-        # Discrete x/y position tokens on a 2ft grid from 0-40ft
-        for n in range(0, 42, 2):
+        # Discrete x/y position tokens on a configurable grid from 0-pos_max
+        for n in range(0, self.pos_max + self.pos_step, self.pos_step):
             tokens.append(f"X{n}")
             tokens.append(f"Y{n}")
-
         # Adjacency requirement and edge tokens for every room pair (including same-type)
         adjacency_tokens: List[str] = []
         for i, room_a in enumerate(self.room_token_names):
@@ -277,15 +281,15 @@ class BlueprintTokenizer:
         _, left, right = token_name.split("_", 2)
         return BlueprintTokenizer._pair_key(left, right)
 
-    def _bucket_size(self, feet: float, buckets=(8, 10, 12, 14, 16, 20)) -> str:
+    def _bucket_size(self, feet: float, buckets: Tuple[int, ...]) -> str:
         best = min(buckets, key=lambda b: abs(b - feet))
         return f"W{best}"
 
     def _bucket_pos(
-        self, coord: float, step: int = 2, max_val: int = 40, prefix: str = "X"
+        self, coord: float, prefix: str = "X"
     ) -> str:
         """Quantize an x/y coordinate into a discrete token."""
-        c = max(0, min(max_val, int(round(coord / step) * step)))
+        c = max(0, min(self.pos_max, int(round(coord / self.pos_step) * self.pos_step)))
         return f"{prefix}{c}"
 
     # ---- PARAMS ENCODING ----
@@ -403,8 +407,8 @@ class BlueprintTokenizer:
 
             w = float(room.get("size", {}).get("width", 12))
             l = float(room.get("size", {}).get("length", 12))
-            wtok = self._bucket_size(w)
-            ltok = self._bucket_size(l).replace("W", "L")
+            wtok = self._bucket_size(w, self.size_buckets_w)
+            ltok = self._bucket_size(l, self.size_buckets_l).replace("W", "L")
             xtok = self._bucket_pos(room.get("position", {}).get("x", 0), prefix="X")
             ytok = self._bucket_pos(room.get("position", {}).get("y", 0), prefix="Y")
 

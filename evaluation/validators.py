@@ -750,16 +750,24 @@ def pack_layout(
     max_width: float = 40,
     max_length: float = 40,
     grid: float = 1.0,
+    adjacency_hints: Optional[Dict[str, List[str]]] = None,
+    zoning: bool = False,
+    min_hall_width: float = 3.0,
 ) -> Dict:
     """Re-pack rooms onto a grid to eliminate overlaps and ensure connectivity.
 
-    This discards existing positions and places rooms one-by-one so that they
-    (a) remain within bounds, (b) do not overlap previously placed rooms,
-    and (c) share a wall with at least one placed room whenever possible.
+    Improvements over the basic packer:
+    - Snap to ``grid`` (feet).
+    - Prefer placements next to hinted neighbor types (e.g., Bedroom↔Bathroom, Kitchen↔Dining).
+    - Optional zoning that places public/private/service clusters into coarse regions.
+    - Simple hallway synthesis when there are multiple bedrooms.
     """
     rooms = (layout.get("layout") or {}).get("rooms", [])
     if not rooms:
         return layout
+
+    def snap(v: float) -> float:
+        return grid * round(v / max(grid, 1e-6))
 
     # Sort by area (largest first) for better packing
     indexed = []
@@ -770,10 +778,29 @@ def pack_layout(
     indexed.sort(reverse=True)
 
     placed: List[Dict] = []
+    placed_by_type: Dict[str, List[Dict]] = {}
+
+    # Zone regions (coarse)
+    zones: Dict[str, Tuple[float, float, float, float]] = {}
+    if zoning:
+        zones = {
+            "public": (0.0, 0.0, max_width * 0.55, max_length * 0.65),
+            "private": (max_width * 0.45, 0.0, max_width, max_length),
+            "service": (0.0, max_length * 0.6, max_width, max_length),
+        }
+
+    def classify(room_type: str) -> str:
+        t = (room_type or "").lower()
+        if t in {"living room", "dining room", "kitchen"}:
+            return "public"
+        if t in {"laundry room", "garage", "office", "closet"}:
+            return "service"
+        return "private"  # bedrooms, bathrooms, etc.
 
     def fits_here(r: Dict, px: float, py: float) -> bool:
         w = float((r.get("size") or {}).get("width", 0))
         l = float((r.get("size") or {}).get("length", 0))
+        px, py = snap(px), snap(py)
         if px < 0 or py < 0 or px + w > max_width or py + l > max_length:
             return False
         rx1, ry1, rx2, ry2 = px, py, px + w, py + l
@@ -783,12 +810,14 @@ def pack_layout(
                 return False
         return True
 
-    def touches_any(r: Dict, px: float, py: float) -> bool:
-        # Check if placement at (px, py) would share a wall with any placed room
+    def touches(r: Dict, px: float, py: float, only_with: Optional[List[str]] = None) -> bool:
+        # Check if placement at (px, py) would share a wall with any placed room, optionally filtered by type list.
         w = float((r.get("size") or {}).get("width", 0))
         l = float((r.get("size") or {}).get("length", 0))
         rx1, ry1, rx2, ry2 = px, py, px + w, py + l
         for q in placed:
+            if only_with is not None and (q.get("type", "").lower() not in [s.lower() for s in only_with]):
+                continue
             qx1, qy1, qx2, qy2 = _room_bounds(q)
             vertical_touch = (abs(rx2 - qx1) < 1e-6 or abs(qx2 - rx1) < 1e-6) and (
                 min(ry2, qy2) - max(ry1, qy1) > 0
@@ -800,41 +829,127 @@ def pack_layout(
                 return True
         return False
 
-    # Lay out rooms on grid
+    def candidate_positions_near(target: Dict, w: float, l: float) -> List[Tuple[float, float]]:
+        # Generate positions that would touch the target room on each side, snapped to grid
+        px, py = float(target.get("position", {}).get("x", 0)), float(target.get("position", {}).get("y", 0))
+        tw = float(target.get("size", {}).get("width", 0))
+        tl = float(target.get("size", {}).get("length", 0))
+        return [
+            (snap(px - w), snap(py)),              # left
+            (snap(px + tw), snap(py)),             # right
+            (snap(px), snap(py - l)),              # bottom
+            (snap(px), snap(py + tl)),             # top
+        ]
+
+    # Lay out rooms on grid with preferences
     for _, _, r in indexed:
+        rtype = (r.get("type") or "").strip()
         size = r.get("size") or {}
         w = float(size.get("width", 0))
         l = float(size.get("length", 0))
         placed_ok = False
-        # First try positions that touch an existing room (connectivity)
-        for y in [i * grid for i in range(int((max_length - l) // grid) + 1)]:
+
+        # Determine search bounds by zone
+        x_min, y_min, x_max, y_max = 0.0, 0.0, max_width - w, max_length - l
+        if zoning:
+            zone = zones.get(classify(rtype), (0.0, 0.0, max_width, max_length))
+            x_min, y_min, x_max, y_max = zone[0], zone[1], max(zone[2] - w, 0.0), max(zone[3] - l, 0.0)
+
+        # 1) Try to attach to preferred neighbor types if any already placed
+        pref = (adjacency_hints or {}).get(rtype, [])
+        pref_lower = [p.lower() for p in pref]
+        near_targets = []
+        for p in pref_lower:
+            for q in placed_by_type.get(p, []) or []:
+                near_targets.append(q)
+        for tgt in near_targets:
+            for x, y in candidate_positions_near(tgt, w, l):
+                if x < x_min or y < y_min or x > x_max or y > y_max:
+                    continue
+                if fits_here(r, x, y) and touches(r, x, y, None):
+                    r.setdefault("position", {})["x"] = snap(x)
+                    r["position"]["y"] = snap(y)
+                    placed.append(r)
+                    placed_by_type.setdefault(rtype.lower(), []).append(r)
+                    placed_ok = True
+                    break
             if placed_ok:
                 break
-            for x in [i * grid for i in range(int((max_width - w) // grid) + 1)]:
-                if fits_here(r, x, y) and (not placed or touches_any(r, x, y)):
-                    r.setdefault("position", {})["x"] = x
-                    r["position"]["y"] = y
+        if placed_ok:
+            continue
+
+        # 2) General scan within zone, but try to ensure connectivity
+        y_vals = [snap(i * grid) for i in range(int((y_max - y_min) // grid) + 1)]
+        x_vals = [snap(i * grid) for i in range(int((x_max - x_min) // grid) + 1)]
+        for y in y_vals:
+            if placed_ok:
+                break
+            for x in x_vals:
+                if fits_here(r, x, y) and (not placed or touches(r, x, y, None)):
+                    r.setdefault("position", {})["x"] = snap(x)
+                    r["position"]["y"] = snap(y)
                     placed.append(r)
+                    placed_by_type.setdefault(rtype.lower(), []).append(r)
                     placed_ok = True
                     break
         if placed_ok:
             continue
-        # Fallback: place anywhere non-overlapping
-        for y in [i * grid for i in range(int((max_length - l) // grid) + 1)]:
+
+        # 3) Last resort anywhere non-overlapping
+        for y in y_vals:
             if placed_ok:
                 break
-            for x in [i * grid for i in range(int((max_width - w) // grid) + 1)]:
+            for x in x_vals:
                 if fits_here(r, x, y):
-                    r.setdefault("position", {})["x"] = x
-                    r["position"]["y"] = y
+                    r.setdefault("position", {})["x"] = snap(x)
+                    r["position"]["y"] = snap(y)
                     placed.append(r)
+                    placed_by_type.setdefault(rtype.lower(), []).append(r)
                     placed_ok = True
                     break
         if not placed_ok:
-            # As a last resort, clamp to origin
+            # Clamp to origin
             r.setdefault("position", {})["x"] = 0.0
             r["position"]["y"] = 0.0
             placed.append(r)
+            placed_by_type.setdefault(rtype.lower(), []).append(r)
+
+    # Simple hallway synthesis for multiple bedrooms
+    bed_rooms = placed_by_type.get("bedroom", []) or []
+    if len(bed_rooms) >= 3:
+        # Vertical hall along the left of the private zone
+        xs = [float(b.get("position", {}).get("x", 0)) for b in bed_rooms]
+        ys1 = [float(b.get("position", {}).get("y", 0)) for b in bed_rooms]
+        ys2 = [float(b.get("position", {}).get("y", 0)) + float(b.get("size", {}).get("length", 0)) for b in bed_rooms]
+        y1 = max(0.0, min(ys1))
+        y2 = min(max_length, max(ys2))
+        h_w = float(max(min_hall_width, grid))
+        x_left = max(0.0, min(xs) - h_w - grid)
+        # Find a non-overlapping x by scanning
+        def hall_fits(px: float) -> bool:
+            rx1, ry1, rx2, ry2 = px, y1, px + h_w, y2
+            if rx2 > max_width:
+                return False
+            for q in placed:
+                qx1, qy1, qx2, qy2 = _room_bounds(q)
+                if rx1 < qx2 and rx2 > qx1 and ry1 < qy2 and ry2 > qy1:
+                    return False
+            return True
+        x_try = [x_left, max(0.0, min(xs) - h_w), max(0.0, min(xs) + grid)]
+        hx = None
+        for cand in x_try:
+            cand = snap(cand)
+            if hall_fits(cand):
+                hx = cand
+                break
+        if hx is not None:
+            hallway = {
+                "type": "Hallway",
+                "position": {"x": hx, "y": snap(y1)},
+                "size": {"width": int(round(h_w)), "length": int(round(y2 - y1))},
+            }
+            placed.append(hallway)
+            placed_by_type.setdefault("hallway", []).append(hallway)
 
     layout.setdefault("layout", {})["rooms"] = placed
     return clamp_bounds(layout, max_width, max_length)
