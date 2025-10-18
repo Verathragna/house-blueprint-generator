@@ -328,7 +328,8 @@ def resolve_overlaps(
     if leftover:
         # Aggregated repulsion: push overlapping rooms apart collectively
         n = len(rooms)
-        for _ in range(60):
+        consecutive_no_change = 0
+        for local_iter in range(30):  # Reduced from 60
             any_change = False
             disp = [(0.0, 0.0) for _ in range(n)]
             for i in range(n):
@@ -362,8 +363,9 @@ def resolve_overlaps(
                         disp[j] = (djx + dxj, djy + dyj)
                         any_change = True
             # Apply a damped update and clamp
-            alpha = 0.6
+            alpha = 0.8  # Increased from 0.6 for faster convergence
             if any_change:
+                consecutive_no_change = 0
                 for idx, (dx, dy) in enumerate(disp):
                     if dx == 0.0 and dy == 0.0:
                         continue
@@ -376,13 +378,16 @@ def resolve_overlaps(
                     pos["x"], pos["y"] = new_x, new_y
                 layout = clamp_bounds(layout, max_width, max_length)
             else:
-                break
+                consecutive_no_change += 1
+                # Early termination if no progress
+                if consecutive_no_change >= 5:
+                    break
         # One more pass with individual (non-adjacent) separation to clean up residuals
         layout = enforce_min_separation(
             layout,
             min_sep=1e-3,
             adjacency=None,
-            max_iterations=max(10, separation_iterations // 2),
+            max_iterations=max(5, separation_iterations // 4),  # Further reduced
             max_width=max_width,
             max_length=max_length,
         )
@@ -593,8 +598,9 @@ def enforce_min_separation(
         return need_x, need_y
 
     # Limit number of local passes for performance
-    max_local_passes = max(10, min(2 * max_iterations, 200))
-    for _ in range(max_local_passes):
+    max_local_passes = max(10, min(max_iterations // 2, 50))  # Much more conservative
+    consecutive_no_change = 0
+    for local_pass in range(max_local_passes):
         any_change = False
         n = len(rooms)
         disp = [(0.0, 0.0) for _ in range(n)]
@@ -633,9 +639,14 @@ def enforce_min_separation(
                 disp[j] = (djx + dxj, djy + dyj)
                 any_change = True
         if not any_change:
-            break
+            consecutive_no_change += 1
+            # If no progress for 3 consecutive passes, terminate early
+            if consecutive_no_change >= 3:
+                break
+        else:
+            consecutive_no_change = 0
         # Apply damped updates with safeguards (avoid new overlaps, try to preserve connectivity)
-        alpha = 0.6
+        alpha = 0.8  # Increased from 0.6 for faster convergence
         # Precompute which rooms currently have at least one wall contact
         had_neighbor = [False] * len(rooms)
         for i in range(len(rooms)):

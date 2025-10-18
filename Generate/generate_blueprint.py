@@ -76,7 +76,7 @@ def main():
     ap.add_argument(
         "--min_separation",
         type=float,
-        default=1.0,
+        default=0.5,  # Reduced from 1.0 for better convergence
         help="Minimum room separation; 0 disables post-processing",
     )
     ap.add_argument(
@@ -426,7 +426,8 @@ def main():
             dump_layout(layout_json, f"attempt{attempt + 1}_pruned")
 
         # Optionally shrink if rooms are too large to reasonably fit the lot, then pre-pack onto grid
-        layout_json = shrink_to_fit(layout_json, max_w, max_h, target_fill=0.8)
+        # Use more conservative target fill to leave more space for separation
+        layout_json = shrink_to_fit(layout_json, max_w, max_h, target_fill=0.65)
         # Zoning + adjacency-aware packing for more realistic layouts
         default_hints = {
             "Bedroom": ["Bathroom", "Hallway"],
@@ -441,10 +442,10 @@ def main():
             layout_json,
             max_width=max_w,
             max_length=max_h,
-            grid=1.0,
+            grid=1.5,  # Use larger grid for more spacing
             adjacency_hints=default_hints,
             zoning=True,
-            min_hall_width=3.0,
+            min_hall_width=4.0,  # Increase minimum hallway width
         )
         dump_layout(layout_json, f"attempt{attempt + 1}_prepacked")
 
@@ -469,8 +470,8 @@ def main():
                 adjacency=build_sep_exempt_adjacency(layout_json),
                 max_width=max_w,
                 max_length=max_h,
-                max_iterations=20,
-                separation_iterations=300,
+                max_iterations=10,  # Reduced from 20
+                separation_iterations=150,  # Reduced from 300
             )
             dump_layout(layout_json, f"attempt{attempt + 1}_overlap_fix")
             overlap_fix_used = True
@@ -522,8 +523,8 @@ def main():
                         adjacency=build_sep_exempt_adjacency(layout_json),
                         max_width=max_w,
                         max_length=max_h,
-                        max_iterations=20,
-                        separation_iterations=300,
+                        max_iterations=8,  # Reduced from 20
+                        separation_iterations=100,  # Reduced from 300
                     )
                     dump_layout(layout_json, f"attempt{attempt + 1}_clamped_re_overlap_fix")
                     issues = validate_layout(
@@ -576,7 +577,7 @@ def main():
                         adjacency=build_sep_exempt_adjacency(layout_packed),
                         max_width=max_w,
                         max_length=max_h,
-                        max_iterations=300,
+                        max_iterations=100,  # Reduced from 300
                     )
                     layout_repaired = clamp_bounds(layout_repaired, max_w, max_h)
                     dump_layout(layout_repaired, f"attempt{attempt + 1}_packed_separated")
@@ -599,7 +600,7 @@ def main():
                                 adjacency=build_sep_exempt_adjacency(layout_packed3),
                                 max_width=max_w,
                                 max_length=max_h,
-                                max_iterations=300,
+                                max_iterations=80,  # Reduced from 300
                             )
                             layout_packed3 = clamp_bounds(layout_packed3, max_w, max_h)
                             dump_layout(layout_packed3, f"attempt{attempt + 1}_packed_separated_shrunk2")
@@ -640,7 +641,7 @@ def main():
                 adjacency=build_sep_exempt_adjacency(layout_json),
                 max_width=max_w,
                 max_length=max_h,
-                max_iterations=200,
+                max_iterations=80,  # Reduced from 200
             )
             dump_layout(layout_json, f"attempt{attempt + 1}_post_sep")
             adjacency_issues = collect_adjacency_issues(layout_json)
@@ -658,8 +659,8 @@ def main():
                     adjacency=build_sep_exempt_adjacency(layout_json),
                     max_width=max_w,
                     max_length=max_h,
-                    max_iterations=20,
-                    separation_iterations=300,
+                    max_iterations=8,  # Reduced from 20
+                    separation_iterations=100,  # Reduced from 300
                 )
                 dump_layout(layout_json, f"attempt{attempt + 1}_overlap_fix")
                 overlap_fix_used = True
