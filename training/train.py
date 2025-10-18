@@ -134,6 +134,16 @@ def train(
     ).to(device)
     opt = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=0.01)
     crit = torch.nn.CrossEntropyLoss(ignore_index=PAD_ID, label_smoothing=0.1)
+    
+    # Add constraint-aware loss
+    from training.constraint_losses import ConstraintLoss
+    constraint_loss = ConstraintLoss(
+        area_weight=1.0,
+        overlap_weight=2.0,
+        boundary_weight=1.5,
+        count_weight=0.5
+    )
+    
     scaler = torch.cuda.amp.GradScaler(enabled=torch.cuda.is_available() and str(device) != "cpu")
 
     start_epoch = 0
@@ -172,7 +182,13 @@ def train(
             mask = mask.to(device)
             with torch.cuda.amp.autocast(enabled=scaler.is_enabled()):
                 logits = model(x, key_padding_mask=mask)
-                loss = crit(logits.reshape(-1, vocab_size), y.reshape(-1))
+                base_loss = crit(logits.reshape(-1, vocab_size), y.reshape(-1))
+                
+                # Add constraint loss during training
+                if train_mode:
+                    loss, loss_dict = constraint_loss(logits, y, tk, base_loss)
+                else:
+                    loss = base_loss
             if train_mode:
                 opt.zero_grad(set_to_none=True)
                 scaler.scale(loss).backward()
@@ -189,8 +205,15 @@ def train(
         for ep in range(start_epoch, start_epoch + epochs):
             tr = run_epoch(train_loader, True)
             va = run_epoch(val_loader, False) if len(val_set) > 0 else float('nan')
-            print(f"Epoch {ep}: train={tr:.4f}  val={va:.4f}")
-            log.write(f"epoch {ep}, train {tr:.4f}, val {va:.4f}\n")
+            
+            # Log with constraint loss information if available
+            if hasattr(run_epoch, 'last_constraint_loss'):
+                constraint_avg = getattr(run_epoch, 'last_constraint_loss', 0.0)
+                print(f"Epoch {ep}: train={tr:.4f} (constraint={constraint_avg:.4f}) val={va:.4f}")
+                log.write(f"epoch {ep}, train {tr:.4f}, constraint {constraint_avg:.4f}, val {va:.4f}\n")
+            else:
+                print(f"Epoch {ep}: train={tr:.4f}  val={va:.4f}")
+                log.write(f"epoch {ep}, train {tr:.4f}, val {va:.4f}\n")
             log.flush()
             list_and_cleanup(keep_last_n=3)
             ckpt_path = os.path.join(CHECKPOINT_DIR, f"epoch_{ep}.pt")
