@@ -1,5 +1,4 @@
 import React from 'react';
-import { Ruler, Cuboid as Cube, PenTool, Users, Palette, Clock } from 'lucide-react';
 
 const Services = () => {
   const services = [

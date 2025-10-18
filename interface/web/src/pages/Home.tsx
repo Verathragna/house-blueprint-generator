@@ -1,6 +1,6 @@
 import React from 'react';
-import { ArrowRight, CheckCircle, Star } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { ArrowRightIcon, CheckCircleIcon, StarIcon } from '@heroicons/react/24/solid';
 
 const Home = () => {
   const features = [
@@ -51,7 +51,7 @@ const Home = () => {
                 className="bg-blue-600 text-white px-8 py-4 rounded-md text-lg font-medium hover:bg-blue-700 transition-colors inline-flex items-center"
               >
                 Start Designing
-                <ArrowRight className="ml-2 h-5 w-5" />
+                <ArrowRightIcon className="ml-2 h-5 w-5" />
               </Link>
               <Link
                 to="/portfolio"
@@ -82,7 +82,7 @@ const Home = () => {
                 className="bg-white p-6 rounded-lg shadow-md animate-card"
                 style={{ animationDelay: `${(index + 1) * 100}ms` }}
               >
-                <CheckCircle className="h-12 w-12 text-blue-600 mb-4" />
+                <CheckCircleIcon className="h-12 w-12 text-blue-600 mb-4" />
                 <h3 className="text-xl font-semibold mb-2">{feature}</h3>
                 <p className="text-gray-600">
                   Professional solutions tailored to your needs.
@@ -106,7 +106,7 @@ const Home = () => {
               >
                 <div className="flex mb-4">
                   {[...Array(testimonial.rating)].map((_, i) => (
-                    <Star key={i} className="h-5 w-5 text-yellow-400 fill-current" />
+                    <StarIcon key={i} className="h-5 w-5 text-yellow-400" />
                   ))}
                 </div>
                 <p className="text-gray-600 mb-4">{testimonial.content}</p>

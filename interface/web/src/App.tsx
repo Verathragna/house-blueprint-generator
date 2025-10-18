@@ -10,7 +10,7 @@ import About from './pages/About';
 import Contact from './pages/Contact';
 import Pricing from './pages/Pricing';
 import FAQ from './pages/FAQ';
-import Design from './pages/Design';
+import DesignFixed from './pages/DesignFixed';
 
 function App() {
   return (
@@ -25,7 +25,7 @@ function App() {
         <Route path="/contact" element={<Contact />} />
         <Route path="/pricing" element={<Pricing />} />
         <Route path="/faq" element={<FAQ />} />
-        <Route path="/design" element={<Design />} />
+        <Route path="/design" element={<DesignFixed />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       <Footer />

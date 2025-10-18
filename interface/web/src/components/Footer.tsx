@@ -1,6 +1,11 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { Facebook, Twitter, Instagram, Linkedin, Mail, Phone, MapPin, Ruler } from 'lucide-react';
+import { 
+  WrenchScrewdriverIcon as ToolIcon,
+  EnvelopeIcon,
+  PhoneIcon,
+  MapPinIcon
+} from '@heroicons/react/24/outline';
 
 const Footer = () => {
   const currentYear = new Date().getFullYear();
@@ -12,25 +17,17 @@ const Footer = () => {
           {/* Company Info */}
           <div className="space-y-4">
             <div className="flex items-center">
-              <Ruler className="h-8 w-8 text-blue-400" />
+              <ToolIcon className="h-8 w-8 text-blue-400" />
               <span className="ml-2 text-xl font-bold text-white">BlueprintPro</span>
             </div>
             <p className="text-sm">
               Professional residential blueprint design services helping you visualize and plan your perfect home.
             </p>
             <div className="flex space-x-4">
-              <a href="https://facebook.com" className="hover:text-blue-400 transition-colors">
-                <Facebook className="h-5 w-5" />
-              </a>
-              <a href="https://twitter.com" className="hover:text-blue-400 transition-colors">
-                <Twitter className="h-5 w-5" />
-              </a>
-              <a href="https://instagram.com" className="hover:text-blue-400 transition-colors">
-                <Instagram className="h-5 w-5" />
-              </a>
-              <a href="https://linkedin.com" className="hover:text-blue-400 transition-colors">
-                <Linkedin className="h-5 w-5" />
-              </a>
+              <a href="https://facebook.com" className="hover:text-blue-400 transition-colors">Facebook</a>
+              <a href="https://twitter.com" className="hover:text-blue-400 transition-colors">Twitter</a>
+              <a href="https://instagram.com" className="hover:text-blue-400 transition-colors">Instagram</a>
+              <a href="https://linkedin.com" className="hover:text-blue-400 transition-colors">LinkedIn</a>
             </div>
           </div>
 
@@ -73,17 +70,17 @@ const Footer = () => {
             <h3 className="text-lg font-semibold text-white mb-4">Contact Us</h3>
             <ul className="space-y-4">
               <li className="flex items-center">
-                <MapPin className="h-5 w-5 mr-2 text-blue-400" />
+                <MapPinIcon className="h-5 w-5 mr-2 text-blue-400" />
                 <span>123 Design Street, Suite 100<br />New York, NY 10001</span>
               </li>
               <li className="flex items-center">
-                <Phone className="h-5 w-5 mr-2 text-blue-400" />
+                <PhoneIcon className="h-5 w-5 mr-2 text-blue-400" />
                 <a href="tel:+1234567890" className="hover:text-blue-400 transition-colors">
                   (123) 456-7890
                 </a>
               </li>
               <li className="flex items-center">
-                <Mail className="h-5 w-5 mr-2 text-blue-400" />
+                <EnvelopeIcon className="h-5 w-5 mr-2 text-blue-400" />
                 <a href="mailto:info@blueprintpro.com" className="hover:text-blue-400 transition-colors">
                   info@blueprintpro.com
                 </a>

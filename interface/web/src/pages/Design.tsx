@@ -69,8 +69,6 @@ const DesignPage = () => {
   // Holds message for modal display when requests fail
   const [errorMessage, setErrorMessage] = useState('');
 
-  // Store API key for authenticated requests
-  const [apiKey, setApiKey] = useState<string | null>(null);
 
   /**
    * Generate a blueprint by calling the backend API and polling for completion.
@@ -92,15 +90,9 @@ const DesignPage = () => {
       }
     };
 
-    let key = apiKey;
-    if (!key) {
-      key = window.prompt('Enter API key') || '';
-      if (!key) throw new Error('API key required');
-      setApiKey(key);
-    }
     const resp = await fetch(`${API_BASE_URL}/generate`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-API-Key': key },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
 
@@ -112,9 +104,7 @@ const DesignPage = () => {
 
     // Poll job status until completion
     while (true) {
-      const statusResp = await fetch(`${API_BASE_URL}/status/${job_id}`, {
-        headers: { 'X-API-Key': key }
-      });
+      const statusResp = await fetch(`${API_BASE_URL}/status/${job_id}`);
       if (!statusResp.ok) {
         throw new Error('Failed to get job status');
       }

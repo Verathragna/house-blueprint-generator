@@ -70,7 +70,7 @@ export const designFormSchema = z.object({
     .min(1, 'Required')
     .regex(/^\d+$/, 'Must be a number')
     .refine(v => Number(v) > 0, { message: 'Must be greater than 0' }),
-  specialRequirements: z.array(z.enum(specialFeatures)).optional(),
+  specialRequirements: z.array(z.enum(specialFeatures)).default([]),
   budget: z.enum(budgetRanges, { required_error: 'Required' })
 });
 

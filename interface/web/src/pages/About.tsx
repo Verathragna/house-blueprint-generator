@@ -4,7 +4,6 @@
  */
 
 import React from 'react';
-import { Award, Users, Clock, CheckCircle } from 'lucide-react';
 
 /**
  * @typedef {Object} StatItem

@@ -4,7 +4,6 @@
  */
 
 import React, { useState } from 'react';
-import { Mail, Phone, MapPin, Clock } from 'lucide-react';
 
 /**
  * @typedef {Object} FormData
