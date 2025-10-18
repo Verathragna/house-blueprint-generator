@@ -460,24 +460,24 @@ const DesignPage = () => {
               <div className="space-y-6">
                 <div>
                   <h3 className="text-lg font-medium mb-2">Floor Plan</h3>
-                  <div className="aspect-w-16 aspect-h-9 bg-gray-100 rounded-lg overflow-hidden">
+                  <div className="bg-gray-100 rounded-lg overflow-auto min-h-[60vh] flex items-center justify-center">
                     {blueprintData && (
                       <img 
                         src={blueprintData.floorPlan} 
                         alt="Floor Plan" 
-                        className="object-cover w-full h-full"
+                        className="max-w-full max-h-[70vh] object-contain mx-auto block"
                       />
                     )}
                   </div>
                 </div>
                 <div>
                   <h3 className="text-lg font-medium mb-2">Elevation</h3>
-                  <div className="aspect-w-16 aspect-h-9 bg-gray-100 rounded-lg overflow-hidden">
+                  <div className="bg-gray-100 rounded-lg overflow-auto min-h-[60vh] flex items-center justify-center">
                     {blueprintData && (
                       <img 
                         src={blueprintData.elevation} 
                         alt="Elevation" 
-                        className="object-cover w-full h-full"
+                        className="max-w-full max-h-[70vh] object-contain mx-auto block"
                       />
                     )}
                   </div>

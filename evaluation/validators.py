@@ -879,34 +879,32 @@ def pack_layout(
             continue
 
         # 2) General scan within zone, but try to ensure connectivity
-        y_vals = [snap(i * grid) for i in range(int((y_max - y_min) // grid) + 1)]
-        x_vals = [snap(i * grid) for i in range(int((x_max - x_min) // grid) + 1)]
-        for y in y_vals:
-            if placed_ok:
+        y_vals = [snap(y_min + i * grid) for i in range(int(((y_max - y_min) // grid)) + 1)]
+        x_vals = [snap(x_min + i * grid) for i in range(int(((x_max - x_min) // grid)) + 1)]
+        # Prefer positions closer to the zone center to avoid leaving a void in the middle
+        cx, cy = (x_min + x_max) * 0.5, (y_min + y_max) * 0.5
+        grid_points = [(x, y) for y in y_vals for x in x_vals]
+        grid_points.sort(key=lambda p: (p[0] - cx) ** 2 + (p[1] - cy) ** 2)
+        for x, y in grid_points:
+            if fits_here(r, x, y) and (not placed or touches(r, x, y, None)):
+                r.setdefault("position", {})["x"] = snap(x)
+                r["position"]["y"] = snap(y)
+                placed.append(r)
+                placed_by_type.setdefault(rtype.lower(), []).append(r)
+                placed_ok = True
                 break
-            for x in x_vals:
-                if fits_here(r, x, y) and (not placed or touches(r, x, y, None)):
-                    r.setdefault("position", {})["x"] = snap(x)
-                    r["position"]["y"] = snap(y)
-                    placed.append(r)
-                    placed_by_type.setdefault(rtype.lower(), []).append(r)
-                    placed_ok = True
-                    break
         if placed_ok:
             continue
 
-        # 3) Last resort anywhere non-overlapping
-        for y in y_vals:
-            if placed_ok:
+        # 3) Last resort anywhere non-overlapping (still center-out ordering)
+        for x, y in grid_points:
+            if fits_here(r, x, y):
+                r.setdefault("position", {})["x"] = snap(x)
+                r["position"]["y"] = snap(y)
+                placed.append(r)
+                placed_by_type.setdefault(rtype.lower(), []).append(r)
+                placed_ok = True
                 break
-            for x in x_vals:
-                if fits_here(r, x, y):
-                    r.setdefault("position", {})["x"] = snap(x)
-                    r["position"]["y"] = snap(y)
-                    placed.append(r)
-                    placed_by_type.setdefault(rtype.lower(), []).append(r)
-                    placed_ok = True
-                    break
         if not placed_ok:
             # Clamp to origin
             r.setdefault("position", {})["x"] = 0.0
@@ -916,7 +914,7 @@ def pack_layout(
 
     # Simple hallway synthesis for multiple bedrooms
     bed_rooms = placed_by_type.get("bedroom", []) or []
-    if len(bed_rooms) >= 3:
+    if len(bed_rooms) >= 2:
         # Vertical hall along the left of the private zone
         xs = [float(b.get("position", {}).get("x", 0)) for b in bed_rooms]
         ys1 = [float(b.get("position", {}).get("y", 0)) for b in bed_rooms]
