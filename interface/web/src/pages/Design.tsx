@@ -541,6 +541,7 @@ const DesignPage = () => {
         )}
       </div>
     </div>
+    </div>
   );
 };
 
