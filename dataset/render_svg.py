@@ -80,6 +80,7 @@ def render_layout_svg(layout_data, svg_path, lot_dims=None, scale=10,
     # Collect shared edges (interior walls) and exposed edges (exterior walls)
     shared = []  # (orientation, x_or_y, t1, t2)
     exposed = []  # (orientation, x_or_y, t1, t2)
+    exposed_by_room = {}  # idx -> List[(orientation, x_or_y, t1, t2)]
 
     # For each room edge, check for overlaps with other rooms
     for i, (x1, y1, x2, y2, name, w, l) in enumerate(rects):
@@ -89,6 +90,7 @@ def render_layout_svg(layout_data, svg_path, lot_dims=None, scale=10,
             ("h", y1, x1, x2),  # top
             ("h", y2, x1, x2),  # bottom
         ]
+        room_segments = []
         for orient, coord, a1, a2 in edges:
             segments = [(a1, a2)]
             for j, (ox1, oy1, ox2, oy2, _, _, _) in enumerate(rects):
@@ -157,6 +159,8 @@ def render_layout_svg(layout_data, svg_path, lot_dims=None, scale=10,
                         segments = new_segments
             for seg in segments:
                 exposed.append((orient, coord, seg[0], seg[1]))
+                room_segments.append((orient, coord, seg[0], seg[1]))
+        exposed_by_room[i] = room_segments
 
     # Merge duplicate shared segments (they will appear twice)
     def _norm_key(e):
@@ -177,17 +181,63 @@ def render_layout_svg(layout_data, svg_path, lot_dims=None, scale=10,
     window_len = max(scale * 2.0, ext_w * 2)
     corner_clear = scale * 1.0
 
+    # Choose a front-door location on an exposed edge of a public room
+    public_names = {"entry", "foyer", "living room", "dining room", "kitchen", "hallway", "garage"}
+    candidates = []  # (priority, idx, orient, c, a, b)
+    for idx, segs in exposed_by_room.items():
+        name = (rects[idx][4] or "").lower()
+        if name not in public_names:
+            continue
+        pri = 0 if name in {"entry", "foyer"} else 1 if name in {"living room", "kitchen", "dining room"} else 2
+        for orient, c, a, b in segs:
+            if b - a >= door_ft + 1.0:  # need some clearance
+                candidates.append((pri, idx, orient, c, a, b))
+    door_choice = None
+    if candidates:
+        candidates.sort(key=lambda t: (t[0], -(t[5] - t[4])))
+        _, idx, orient, c, a, b = candidates[0]
+        # place gap in the middle, keep 1ft from corners
+        gap_mid = (a + b) * 0.5
+        gap1 = max(a + 0.5, gap_mid - door_ft * 0.5)
+        gap2 = min(b - 0.5, gap_mid + door_ft * 0.5)
+        if gap2 > gap1:
+            door_choice = (orient, c, gap1, gap2)
+
+    # Helper for comparing float segments
+    def _seg_key(orient, c, a, b):
+        if a > b:
+            a, b = b, a
+        return (orient, round(c, 5), round(a, 5), round(b, 5))
+
+    door_key = _seg_key(*door_choice) if door_choice else None
+
     for orient, c, a, b in exposed:
         if b <= a:
             continue
+        is_front_edge = door_choice and _seg_key(orient, c, a, b) == door_key
         if orient == "v":
             x = c * scale + pad
             y1 = a * scale + pad
             y2 = b * scale + pad
-            dwg.add(dwg.line(start=(x, y1), end=(x, y2), stroke=stroke_color, stroke_width=ext_w))
+            if is_front_edge:
+                dg1 = door_choice[2] * scale + pad
+                dg2 = door_choice[3] * scale + pad
+                if dg1 > y1:
+                    dwg.add(dwg.line(start=(x, y1), end=(x, dg1), stroke=stroke_color, stroke_width=ext_w))
+                if y2 > dg2:
+                    dwg.add(dwg.line(start=(x, dg2), end=(x, y2), stroke=stroke_color, stroke_width=ext_w))
+                # Door leaf and swing
+                hinge_x, hinge_y = x, dg1
+                leaf_len = max(scale * 1.5, (dg2 - dg1))
+                leaf_end = (hinge_x + leaf_len, hinge_y)
+                dwg.add(dwg.line(start=(hinge_x, hinge_y), end=leaf_end, stroke=stroke_color, stroke_width=int_w*0.7))
+                arc_path = f"M {hinge_x},{hinge_y} A {leaf_len},{leaf_len} 0 0,1 {hinge_x},{hinge_y + leaf_len}"
+                dwg.add(dwg.path(d=arc_path, fill="none", stroke=stroke_color, stroke_width=int_w*0.5))
+            else:
+                dwg.add(dwg.line(start=(x, y1), end=(x, y2), stroke=stroke_color, stroke_width=ext_w))
             # Windows: place 1-2 short segments avoiding corners
-            span = (y2 - y1)
-            if span > 4 * window_len:
+            span = ((b - a) * scale)
+            if span > 4 * window_len and not is_front_edge:
                 win_y = y1 + span * 0.5
                 dwg.add(dwg.line(start=(x - ext_w*0.6, win_y - window_len/2), end=(x + ext_w*0.6, win_y - window_len/2), stroke=stroke_color, stroke_width=ext_w*0.3))
                 dwg.add(dwg.line(start=(x - ext_w*0.6, win_y + window_len/2), end=(x + ext_w*0.6, win_y + window_len/2), stroke=stroke_color, stroke_width=ext_w*0.3))
@@ -195,9 +245,23 @@ def render_layout_svg(layout_data, svg_path, lot_dims=None, scale=10,
             y = c * scale + pad
             x1 = a * scale + pad
             x2 = b * scale + pad
-            dwg.add(dwg.line(start=(x1, y), end=(x2, y), stroke=stroke_color, stroke_width=ext_w))
-            span = (x2 - x1)
-            if span > 4 * window_len:
+            if is_front_edge:
+                dg1 = door_choice[2] * scale + pad
+                dg2 = door_choice[3] * scale + pad
+                if dg1 > x1:
+                    dwg.add(dwg.line(start=(x1, y), end=(dg1, y), stroke=stroke_color, stroke_width=ext_w))
+                if x2 > dg2:
+                    dwg.add(dwg.line(start=(dg2, y), end=(x2, y), stroke=stroke_color, stroke_width=ext_w))
+                hinge_x, hinge_y = dg1, y
+                leaf_len = max(scale * 1.5, (dg2 - dg1))
+                leaf_end = (hinge_x, hinge_y + leaf_len)
+                dwg.add(dwg.line(start=(hinge_x, hinge_y), end=leaf_end, stroke=stroke_color, stroke_width=int_w*0.7))
+                arc_path = f"M {hinge_x},{hinge_y} A {leaf_len},{leaf_len} 0 0,1 {hinge_x + leaf_len},{hinge_y}"
+                dwg.add(dwg.path(d=arc_path, fill="none", stroke=stroke_color, stroke_width=int_w*0.5))
+            else:
+                dwg.add(dwg.line(start=(x1, y), end=(x2, y), stroke=stroke_color, stroke_width=ext_w))
+            span = ((b - a) * scale)
+            if span > 4 * window_len and not is_front_edge:
                 win_x = x1 + span * 0.5
                 dwg.add(dwg.line(start=(win_x - window_len/2, y - ext_w*0.6), end=(win_x - window_len/2, y + ext_w*0.6), stroke=stroke_color, stroke_width=ext_w*0.3))
                 dwg.add(dwg.line(start=(win_x + window_len/2, y - ext_w*0.6), end=(win_x + window_len/2, y + ext_w*0.6), stroke=stroke_color, stroke_width=ext_w*0.3))

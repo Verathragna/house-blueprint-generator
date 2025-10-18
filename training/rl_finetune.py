@@ -62,14 +62,17 @@ def issues_to_penalty(
         )
     penalty = 0.0
     for issue in issues:
-        if "overlap" in issue.lower():
+        low = issue.lower()
+        if "overlap" in low:
             penalty += 2.0
-        elif "bounds" in issue.lower():
+        elif "bounds" in low:
             penalty += 1.5
-        elif "missing" in issue.lower():
+        elif "missing" in low:
             penalty += 2.0
-        elif "separation" in issue.lower():
+        elif "separation" in low:
             penalty += 1.0
+        elif "entrance" in low:
+            penalty += 1.5
         else:
             penalty += 0.5
     return penalty, issues
@@ -146,10 +149,33 @@ def main():
     vocab_size = tokenizer.get_vocab_size()
     device = torch.device(args.device)
 
-    model = LayoutTransformer(vocab_size=vocab_size)
+    # Load checkpoint first to infer architecture (hidden size, layers, ff dim)
     checkpoint = torch.load(args.checkpoint_in, map_location=device)
     state_dict = checkpoint.get("model", checkpoint)
-    model.load_state_dict(state_dict)
+
+    # Infer transformer dimensions from weights to avoid shape mismatches
+    def infer_arch(sd: Dict[str, torch.Tensor]):
+        d_model = int(sd["embed.weight"].shape[1]) if "embed.weight" in sd else 128
+        # Find number of encoder layers by scanning keys like encoder.layers.N.*
+        max_layer = -1
+        for k in sd.keys():
+            if k.startswith("encoder.layers."):
+                parts = k.split(".")
+                if len(parts) > 2 and parts[2].isdigit():
+                    max_layer = max(max_layer, int(parts[2]))
+        num_layers = max_layer + 1 if max_layer >= 0 else 4
+        # Feedforward dimension from first layer if present
+        dim_ff = None
+        w_key = "encoder.layers.0.linear1.weight"
+        if w_key in sd:
+            dim_ff = int(sd[w_key].shape[0])
+        else:
+            dim_ff = d_model * 4
+        return d_model, num_layers, dim_ff
+
+    d_model, num_layers, dim_ff = infer_arch(state_dict)
+    model = LayoutTransformer(vocab_size=vocab_size, d_model=d_model, num_layers=num_layers, dim_ff=dim_ff)
+    model.load_state_dict(state_dict, strict=True)
     model.to(device)
     model.train()
 

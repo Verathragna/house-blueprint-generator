@@ -219,7 +219,7 @@ const DesignPage = () => {
   };
 
   return (
-    <React.Fragment>
+    <div>
       {isGenerating && (
         <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-40">
           <div className="bg-white p-4 rounded-md flex items-center">
@@ -452,19 +452,16 @@ const DesignPage = () => {
             </form>
           </div>
         ) : (
-          <React.Fragment>
-            {/* Step 2: Blueprint Preview */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            {/* Blueprint preview panel */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             <div className="lg:col-span-2 bg-white rounded-lg shadow-lg p-6">
               <div className="space-y-6">
                 <div>
                   <h3 className="text-lg font-medium mb-2">Floor Plan</h3>
                   <div className="bg-gray-100 rounded-lg overflow-auto min-h-[60vh] flex items-center justify-center">
                     {blueprintData && (
-                      <img 
-                        src={blueprintData.floorPlan} 
-                        alt="Floor Plan" 
+                      <img
+                        src={blueprintData.floorPlan}
+                        alt="Floor Plan"
                         className="max-w-full max-h-[70vh] object-contain mx-auto block"
                       />
                     )}
@@ -474,9 +471,9 @@ const DesignPage = () => {
                   <h3 className="text-lg font-medium mb-2">Elevation</h3>
                   <div className="bg-gray-100 rounded-lg overflow-auto min-h-[60vh] flex items-center justify-center">
                     {blueprintData && (
-                      <img 
-                        src={blueprintData.elevation} 
-                        alt="Elevation" 
+                      <img
+                        src={blueprintData.elevation}
+                        alt="Elevation"
                         className="max-w-full max-h-[70vh] object-contain mx-auto block"
                       />
                     )}
@@ -494,7 +491,7 @@ const DesignPage = () => {
                     Export
                   </button>
                 </div>
-                <button 
+                <button
                   className="px-4 py-2 text-blue-600 hover:bg-blue-50 rounded-md transition-colors"
                   onClick={() => setStep(1)}
                 >
@@ -503,7 +500,6 @@ const DesignPage = () => {
               </div>
             </div>
 
-            {/* Design details sidebar */}
             <div className="bg-white rounded-lg shadow-lg p-6">
               <h2 className="text-xl font-semibold mb-4">Design Details</h2>
               <div className="space-y-4">
@@ -542,10 +538,9 @@ const DesignPage = () => {
               </div>
             </div>
           </div>
-          </React.Fragment>
         )}
       </div>
-    </React.Fragment>
+    </div>
   );
 };
 

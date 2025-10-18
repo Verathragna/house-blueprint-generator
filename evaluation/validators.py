@@ -711,6 +711,66 @@ def enforce_min_separation(
     return layout
 
 
+def _touches_perimeter(room: Dict, *, max_width: float, max_length: float, tol: float = 1e-6) -> Tuple[bool, float]:
+    """Return (touches, max_contact_span) with the outer boundary.
+
+    max_contact_span is the longest continuous contact length with any outer edge
+    (in feet), considering the room rectangle.
+    """
+    x = float((room.get("position") or {}).get("x", 0))
+    y = float((room.get("position") or {}).get("y", 0))
+    w = float((room.get("size") or {}).get("width", 0))
+    l = float((room.get("size") or {}).get("length", 0))
+    spans = []
+    if abs(x - 0.0) < tol:
+        spans.append(l)
+    if abs(y - 0.0) < tol:
+        spans.append(w)
+    if abs((x + w) - max_width) < tol:
+        spans.append(l)
+    if abs((y + l) - max_length) < tol:
+        spans.append(w)
+    return (len(spans) > 0, max(spans) if spans else 0.0)
+
+
+def check_entrance(
+    rooms: List[Dict],
+    *,
+    max_width: float,
+    max_length: float,
+    min_clear: float = 3.0,
+    allowed_room_types: Optional[List[str]] = None,
+) -> List[str]:
+    """Ensure there is an exterior entrance opportunity.
+
+    We require that at least one "public" room touches the perimeter with
+    a straight contact span of at least ``min_clear`` feet to fit a door opening.
+
+    By default allowed rooms are: Entry/Foyer, Living/Dining, Kitchen, Hallway,
+    and Garage (as a fallback).
+    """
+    allowed = [
+        "Entry",
+        "Foyer",
+        "Living Room",
+        "Dining Room",
+        "Kitchen",
+        "Hallway",
+        "Garage",
+    ] if allowed_room_types is None else allowed_room_types
+    allowed_l = {t.lower() for t in allowed}
+    for r in rooms:
+        rtype = (r.get("type") or "").lower()
+        if rtype not in allowed_l:
+            continue
+        touches, span = _touches_perimeter(r, max_width=max_width, max_length=max_length)
+        if touches and span >= max(0.1, float(min_clear)):
+            return []
+    return [
+        f"No exterior entrance: no public room touches the boundary with >= {min_clear} ft straight run"
+    ]
+
+
 def validate_layout(
     layout: Dict,
     max_width: float = 40,
@@ -738,6 +798,15 @@ def validate_layout(
     issues.extend(check_overlaps(rooms))
     if require_connectivity:
         issues.extend(check_connectivity(rooms))
+    # Entrance check (after basic geometry so bounds are known)
+    issues.extend(
+        check_entrance(
+            rooms,
+            max_width=max_width,
+            max_length=max_length,
+            min_clear=3.0,
+        )
+    )
     if adjacency:
         issues.extend(check_adjacency(rooms, adjacency))
     if min_separation > 0:
@@ -959,6 +1028,7 @@ __all__ = [
     "check_separation",
     "check_connectivity",
     "check_adjacency",
+    "check_entrance",
     "validate_layout",
     "enforce_min_separation",
     "resolve_overlaps",
