@@ -7,6 +7,7 @@ Focus on creating layouts that satisfy physical constraints:
 - Realistic room counts and sizes
 - Good connectivity patterns
 """
+import json
 import random
 from typing import List, Dict, Tuple, Optional
 import logging
@@ -337,5 +338,4 @@ def generate_realistic_dataset(num_samples: int = 1000,
 
 
 if __name__ == "__main__":
-    import json
     generate_realistic_dataset(1000, seed=42)

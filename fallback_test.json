@@ -1,0 +1,83 @@
+{
+  "layout": {
+    "rooms": [
+      {
+        "type": "Bedroom",
+        "position": {
+          "x": 14.0,
+          "y": 14.0
+        },
+        "size": {
+          "width": 12,
+          "length": 12
+        }
+      },
+      {
+        "type": "Living Room",
+        "position": {
+          "x": 12.0,
+          "y": 6.0
+        },
+        "size": {
+          "width": 16,
+          "length": 8
+        }
+      },
+      {
+        "type": "Kitchen",
+        "position": {
+          "x": 13.0,
+          "y": 26.0
+        },
+        "size": {
+          "width": 14,
+          "length": 8
+        }
+      },
+      {
+        "type": "Bedroom",
+        "position": {
+          "x": 0.0,
+          "y": 8.0
+        },
+        "size": {
+          "width": 12,
+          "length": 8
+        }
+      },
+      {
+        "type": "Dining Room",
+        "position": {
+          "x": 28.0,
+          "y": 8.0
+        },
+        "size": {
+          "width": 12,
+          "length": 8
+        }
+      },
+      {
+        "type": "Bathroom",
+        "position": {
+          "x": 6.0,
+          "y": 16.0
+        },
+        "size": {
+          "width": 8,
+          "length": 8
+        }
+      },
+      {
+        "type": "Laundry Room",
+        "position": {
+          "x": 26.0,
+          "y": 16.0
+        },
+        "size": {
+          "width": 8,
+          "length": 8
+        }
+      }
+    ]
+  }
+}
