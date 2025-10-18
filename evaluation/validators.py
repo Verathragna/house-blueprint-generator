@@ -822,6 +822,8 @@ def pack_layout(
     adjacency_hints: Optional[Dict[str, List[str]]] = None,
     zoning: bool = False,
     min_hall_width: float = 3.0,
+    min_gap: float = 3.0,
+    avoid_peninsulas: bool = True,
 ) -> Dict:
     """Re-pack rooms onto a grid to eliminate overlaps and ensure connectivity.
 
@@ -830,6 +832,8 @@ def pack_layout(
     - Prefer placements next to hinted neighbor types (e.g., Bedroom↔Bathroom, Kitchen↔Dining).
     - Optional zoning that places public/private/service clusters into coarse regions.
     - Simple hallway synthesis when there are multiple bedrooms.
+    - Reject placements that create narrow leftover slivers (< ``min_gap``).
+    - Avoid "peninsula" rooms that protrude from the envelope (touch boundary with poor internal contact).
     """
     rooms = (layout.get("layout") or {}).get("rooms", [])
     if not rooms:
@@ -866,6 +870,79 @@ def pack_layout(
             return "service"
         return "private"  # bedrooms, bathrooms, etc.
 
+    def _shared_wall_len(px: float, py: float, w: float, l: float) -> float:
+        rx1, ry1, rx2, ry2 = px, py, px + w, py + l
+        total = 0.0
+        for q in placed:
+            qx1, qy1, qx2, qy2 = _room_bounds(q)
+            # vertical contact
+            if abs(rx2 - qx1) < 1e-6 or abs(qx2 - rx1) < 1e-6:
+                overlap = max(0.0, min(ry2, qy2) - max(ry1, qy1))
+                total += overlap
+            # horizontal contact
+            if abs(ry2 - qy1) < 1e-6 or abs(qy2 - ry1) < 1e-6:
+                overlap = max(0.0, min(rx2, qx2) - max(rx1, qx1))
+                total += overlap
+        return total
+
+    def _creates_narrow_gap(px: float, py: float, w: float, l: float) -> bool:
+        # Reject if the candidate leaves a corridor-like gap narrower than min_gap
+        rx1, ry1, rx2, ry2 = px, py, px + w, py + l
+        # Check gaps to boundary
+        left_gap = rx1 - 0.0
+        right_gap = max_width - rx2
+        bottom_gap = ry1 - 0.0
+        top_gap = max_length - ry2
+        # If a long side is parallel and the free space on that side is narrow, reject
+        if left_gap > 0 and left_gap < min_gap and (ry2 - ry1) >= min_gap:
+            return True
+        if right_gap > 0 and right_gap < min_gap and (ry2 - ry1) >= min_gap:
+            return True
+        if bottom_gap > 0 and bottom_gap < min_gap and (rx2 - rx1) >= min_gap:
+            return True
+        if top_gap > 0 and top_gap < min_gap and (rx2 - rx1) >= min_gap:
+            return True
+        # Check gaps against placed rooms (parallel strips)
+        for q in placed:
+            qx1, qy1, qx2, qy2 = _room_bounds(q)
+            # vertical strip between rx1..rx2 and a q to its left/right
+            if not (ry2 <= qy1 or ry1 >= qy2):  # y-overlap exists
+                # gap to left neighbor
+                if qx2 <= rx1:
+                    gap = rx1 - qx2
+                    if 0 < gap < min_gap and (min(ry2, qy2) - max(ry1, qy1)) >= min_gap:
+                        return True
+                # gap to right neighbor
+                if qx1 >= rx2:
+                    gap = qx1 - rx2
+                    if 0 < gap < min_gap and (min(ry2, qy2) - max(ry1, qy1)) >= min_gap:
+                        return True
+            # horizontal strip between ry1..ry2 and a q below/above
+            if not (rx2 <= qx1 or rx1 >= qx2):  # x-overlap exists
+                # gap to bottom neighbor
+                if qy2 <= ry1:
+                    gap = ry1 - qy2
+                    if 0 < gap < min_gap and (min(rx2, qx2) - max(rx1, qx1)) >= min_gap:
+                        return True
+                # gap to top neighbor
+                if qy1 >= ry2:
+                    gap = qy1 - ry2
+                    if 0 < gap < min_gap and (min(rx2, qx2) - max(rx1, qx1)) >= min_gap:
+                        return True
+        return False
+
+    def _would_be_peninsula(px: float, py: float, w: float, l: float) -> bool:
+        if not avoid_peninsulas:
+            return False
+        rx1, ry1, rx2, ry2 = px, py, px + w, py + l
+        touches_boundary = rx1 <= 1e-6 or ry1 <= 1e-6 or abs(rx2 - max_width) < 1e-6 or abs(ry2 - max_length) < 1e-6
+        if not touches_boundary:
+            return False
+        shared = _shared_wall_len(px, py, w, l)
+        # If little interior contact (< 0.5 of the shorter side), treat as peninsula
+        min_side = max(1e-6, min(w, l))
+        return shared < 0.5 * min_side
+
     def fits_here(r: Dict, px: float, py: float) -> bool:
         w = float((r.get("size") or {}).get("width", 0))
         l = float((r.get("size") or {}).get("length", 0))
@@ -877,6 +954,10 @@ def pack_layout(
             qx1, qy1, qx2, qy2 = _room_bounds(q)
             if rx1 < qx2 and rx2 > qx1 and ry1 < qy2 and ry2 > qy1:
                 return False
+        if _creates_narrow_gap(px, py, w, l):
+            return False
+        if _would_be_peninsula(px, py, w, l):
+            return False
         return True
 
     def touches(r: Dict, px: float, py: float, only_with: Optional[List[str]] = None) -> bool:
@@ -931,19 +1012,31 @@ def pack_layout(
         for p in pref_lower:
             for q in placed_by_type.get(p, []) or []:
                 near_targets.append(q)
+        # Evaluate all candidates with a score to prefer interior, well-connected placements
+        best: Optional[Tuple[float, float, float]] = None  # score, x, y
+        def score_pos(x: float, y: float) -> float:
+            if not fits_here(r, x, y):
+                return float("-inf")
+            shared = _shared_wall_len(x, y, w, l)
+            # mild penalty for touching boundary
+            boundary_pen = 0.0
+            if x <= 0 or y <= 0 or x + w >= max_width or y + l >= max_length:
+                boundary_pen = 0.5 * min(w, l)
+            return shared - boundary_pen
         for tgt in near_targets:
             for x, y in candidate_positions_near(tgt, w, l):
                 if x < x_min or y < y_min or x > x_max or y > y_max:
                     continue
-                if fits_here(r, x, y) and touches(r, x, y, None):
-                    r.setdefault("position", {})["x"] = snap(x)
-                    r["position"]["y"] = snap(y)
-                    placed.append(r)
-                    placed_by_type.setdefault(rtype.lower(), []).append(r)
-                    placed_ok = True
-                    break
-            if placed_ok:
-                break
+                sc = score_pos(x, y)
+                if best is None or sc > best[0]:
+                    best = (sc, x, y)
+        if best is not None and best[0] != float("-inf"):
+            x, y = best[1], best[2]
+            r.setdefault("position", {})["x"] = snap(x)
+            r["position"]["y"] = snap(y)
+            placed.append(r)
+            placed_by_type.setdefault(rtype.lower(), []).append(r)
+            placed_ok = True
         if placed_ok:
             continue
 
