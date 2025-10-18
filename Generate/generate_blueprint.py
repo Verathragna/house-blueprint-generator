@@ -137,12 +137,47 @@ def main():
         sys.exit(1)
 
     tk = BlueprintTokenizer()
-    # Match feedforward dim to checkpoint (dim_ff=1024) to avoid size mismatch on load
-    model = LayoutTransformer(tk.get_vocab_size(), d_model=256, dim_ff=1024)
 
+    # Load checkpoint first so we can configure the model to match its dimensions
     ckpt_path = resolve_checkpoint_path(args.checkpoint)
     ckpt_blob = torch.load(ckpt_path, map_location=args.device)
     state_dict = ckpt_blob["model"] if isinstance(ckpt_blob, dict) and "model" in ckpt_blob else ckpt_blob
+
+    # Infer transformer dims from checkpoint to avoid size mismatches
+    def _infer_d_model(sd):
+        w = sd.get("embed.weight")
+        return int(w.shape[1]) if w is not None else 128
+
+    def _infer_dim_ff(sd):
+        w = sd.get("encoder.layers.0.linear1.weight")
+        return int(w.shape[0]) if w is not None else 4 * _infer_d_model(sd)
+
+    def _infer_num_layers(sd):
+        layers = [k for k in sd.keys() if k.startswith("encoder.layers.")]
+        if not layers:
+            return 4
+        # keys like encoder.layers.{i}.something -> get max i + 1
+        try:
+            idxs = set(int(k.split(".")[2]) for k in layers)
+            return max(idxs) + 1
+        except Exception:
+            return 4
+
+    d_model = _infer_d_model(state_dict)
+    dim_ff = _infer_dim_ff(state_dict)
+    num_layers = _infer_num_layers(state_dict)
+
+    # Use a safe default nhead that divides d_model (prefer 8; fallback to 4)
+    nhead = 8 if d_model % 8 == 0 else (4 if d_model % 4 == 0 else 2)
+
+    model = LayoutTransformer(
+        tk.get_vocab_size(),
+        d_model=d_model,
+        nhead=nhead,
+        num_layers=num_layers,
+        dim_ff=dim_ff,
+    )
+
     model.load_state_dict(state_dict, strict=False)
     model.to(args.device)
 
