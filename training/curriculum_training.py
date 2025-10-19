@@ -301,7 +301,7 @@ class CurriculumTrainer:
                 optimizer.zero_grad()
                 
                 # Forward pass
-                with torch.cuda.amp.autocast(enabled=torch.cuda.is_available()):
+                with torch.amp.autocast('cuda', enabled=torch.cuda.is_available()):
                     logits = self.model(x, key_padding_mask=mask)
                     base_loss = base_criterion(logits.reshape(-1, self.tokenizer.get_vocab_size()), 
                                              y.reshape(-1))

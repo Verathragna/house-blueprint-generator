@@ -68,7 +68,6 @@ class Constraints(RootModel[Dict[str, float]]):
 
 
 class Params(BaseModel):
-    houseStyle: Optional[str] = None
     dimensions: Optional[Dimensions] = None
     foundationType: Optional[str] = None
     stories: Optional[int] = Field(default=1, ge=1)

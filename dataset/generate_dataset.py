@@ -29,7 +29,6 @@ MAX_COORD = 40
 
 OUT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), 'datasets/synthetic'))
 
-STYLES = ["Craftsman", "Modern", "Colonial", "Ranch", "Mediterranean"]
 SIZES = ["small", "medium", "large"]
 ROOM_TYPES = [
     "Bedroom",
@@ -63,7 +62,6 @@ def sample_parameters(i, rng=random):
     size = rng.choice(SIZES)
     square_feet = {"small": 1000, "medium": 2000, "large": 3000}[size]
     return {
-        "houseStyle": rng.choice(STYLES),
         "squareFeet": square_feet,
         "bedrooms": rng.randint(2, 5),
         "bathrooms": {"full": rng.randint(1, 3)},
@@ -343,7 +341,7 @@ def ingest_external_dataset(
 
         layout = {"layout": {"rooms": rooms}}
         params = data.get(
-            "params", {"houseStyle": "External", "squareFeet": data.get("squareFeet", 0)}
+            "params", {"squareFeet": data.get("squareFeet", 0)}
         )
 
         try:

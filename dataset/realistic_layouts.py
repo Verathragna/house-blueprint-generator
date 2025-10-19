@@ -369,7 +369,6 @@ def generate_realistic_dataset(num_samples: int = 1000,
             
             # Generate varied parameters
             params = {
-                "houseStyle": rng.choice(["Modern", "Traditional", "Craftsman", "Ranch"]),
                 "squareFeet": rng.choice([1200, 1500, 1800, 2200, 2500]),
                 "bedrooms": rng.randint(2, 4),
                 "bathrooms": {"full": rng.randint(1, 3)},

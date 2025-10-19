@@ -310,7 +310,6 @@ def generate_suggestions(params: Dict, shortage: float, width: float, height: fl
 if __name__ == "__main__":
     # Test with example parameters
     test_params = {
-        "houseStyle": "Modern",
         "squareFeet": "2400",
         "bedrooms": "4",
         "bathrooms": {"full": "3", "half": "1"},

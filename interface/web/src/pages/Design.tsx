@@ -3,7 +3,6 @@ import { Save, Download, Loader2 } from 'lucide-react';
 import ErrorModal from '../components/ErrorModal';
 import {
   designFormSchema,
-  architecturalStyles,
   specialFeatures,
   budgetRanges,
   budgetLabels,
@@ -56,7 +55,6 @@ const DesignPage = () => {
     bedrooms: '',
     bathrooms: '',
     floors: '',
-    style: '',
     lotWidth: '',
     lotLength: '',
     specialRequirements: [],
@@ -79,7 +77,6 @@ const DesignPage = () => {
   const generateBlueprint = async (data: DesignFormData): Promise<BlueprintData> => {
     const payload = {
       params: {
-        houseStyle: data.style,
         dimensions: {
           width: Number(data.lotWidth),
           depth: Number(data.lotLength)
@@ -380,26 +377,6 @@ const DesignPage = () => {
                   )}
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Architectural Style*
-                  </label>
-                  <select
-                    name="style"
-                    value={formData.style}
-                    onChange={handleInputChange}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                    required
-                  >
-                    <option value="">Select a style</option>
-                    {architecturalStyles.map(style => (
-                      <option key={style} value={style}>{style}</option>
-                    ))}
-                  </select>
-                  {errors.style && (
-                    <p className="text-red-500 text-sm mt-1">{errors.style}</p>
-                  )}
-                </div>
               </div>
 
               {/* Special requirements section */}

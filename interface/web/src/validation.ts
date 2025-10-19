@@ -1,16 +1,5 @@
 import { z } from 'zod';
 
-export const architecturalStyles = [
-  'Modern',
-  'Contemporary',
-  'Traditional',
-  'Colonial',
-  'Mediterranean',
-  'Craftsman',
-  'Ranch',
-  'Victorian'
-] as const;
-
 export const specialFeatures = [
   'Garage',
   'Basement',
@@ -59,7 +48,6 @@ export const designFormSchema = z.object({
     .refine(v => Number(v) >= 1 && Number(v) <= 4, {
       message: 'Must be between 1 and 4'
     }),
-  style: z.enum(architecturalStyles, { required_error: 'Required' }),
   lotWidth: z
     .string()
     .min(1, 'Required')

@@ -21,16 +21,11 @@ const DesignFixed = () => {
     bedrooms: '',
     bathrooms: '',
     floors: '',
-    style: '',
     lotWidth: '',
     lotLength: '',
     budget: ''
   });
 
-  const architecturalStyles = [
-    'Modern', 'Contemporary', 'Traditional', 'Colonial', 
-    'Mediterranean', 'Craftsman', 'Ranch', 'Victorian'
-  ];
 
   const budgetRanges = ['200-300k', '300-400k', '400-500k', '500k+'];
   const budgetLabels: Record<string, string> = {
@@ -50,7 +45,7 @@ const DesignFixed = () => {
     
     // Basic validation
     if (!formData.squareFootage || !formData.bedrooms || !formData.bathrooms || 
-        !formData.floors || !formData.style || !formData.lotWidth || 
+        !formData.floors || !formData.lotWidth || 
         !formData.lotLength || !formData.budget) {
       setErrorMessage('Please fill in all required fields.');
       return;
@@ -239,23 +234,6 @@ const DesignFixed = () => {
                     </select>
                   </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Architectural Style*
-                    </label>
-                    <select
-                      name="style"
-                      value={formData.style}
-                      onChange={handleInputChange}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                      required
-                    >
-                      <option value="">Select a style</option>
-                      {architecturalStyles.map(style => (
-                        <option key={style} value={style}>{style}</option>
-                      ))}
-                    </select>
-                  </div>
                 </div>
 
                 <div className="flex justify-end">
@@ -336,10 +314,6 @@ const DesignFixed = () => {
                       <br />
                       {formData.floors} floor(s)
                     </p>
-                  </div>
-                  <div>
-                    <h3 className="font-medium text-gray-700">Style</h3>
-                    <p className="text-gray-600">{formData.style}</p>
                   </div>
                 </div>
               </div>

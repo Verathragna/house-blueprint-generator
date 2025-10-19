@@ -75,9 +75,6 @@ class BlueprintTokenizer:
             "FOUNDATION_BASEMENT",
             "GARAGE_ATTACHED",
             "GARAGE_DETACHED",
-            "STYLE_CRAFTSMAN",
-            "STYLE_COLONIAL",
-            "STYLE_MODERN",
         ]
 
         # Add discrete size buckets (W/L) in a fixed order
@@ -295,13 +292,7 @@ class BlueprintTokenizer:
     # ---- PARAMS ENCODING ----
     def encode_params(self, params: dict) -> List[int]:
         ids = [BOS_ID]
-        style = (params.get("houseStyle") or "").lower()
-        if "craftsman" in style:
-            ids.append(self.token_to_id["STYLE_CRAFTSMAN"])
-        elif "colonial" in style:
-            ids.append(self.token_to_id["STYLE_COLONIAL"])
-        elif "modern" in style:
-            ids.append(self.token_to_id["STYLE_MODERN"])
+        # houseStyle deprecated: no longer conditions the prefix
 
         for _ in range(int(params.get("bedrooms", 0))):
             ids.append(self.token_to_id["BEDROOM"])
