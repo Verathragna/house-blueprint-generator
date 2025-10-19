@@ -221,7 +221,17 @@ class ConstraintLoss:
         # 3. Useless hallway penalty  
         hallway_penalty = self._useless_hallway_penalty(rooms)
         
-        penalty = garage_penalty + adjacency_penalty + hallway_penalty
+        # 4. Room size penalty
+        size_penalty = self._room_size_penalty(rooms)
+        
+        # 5. Entry access penalty
+        entry_penalty = self._entry_access_penalty(rooms)
+        
+        # 6. Natural light penalty
+        light_penalty = self._natural_light_penalty(rooms)
+        
+        penalty = (garage_penalty + adjacency_penalty + hallway_penalty + 
+                  size_penalty + entry_penalty + light_penalty)
         return penalty
     
     def _garage_access_penalty(self, rooms: List[Dict]) -> float:
@@ -298,6 +308,83 @@ class ConstraintLoss:
                 if len(rooms) <= 4:
                     penalty += 0.2
                     
+        return penalty
+    
+    def _room_size_penalty(self, rooms: List[Dict]) -> float:
+        """Penalize rooms with unreasonable sizes."""
+        penalty = 0.0
+        
+        min_sizes = {
+            "bedroom": 81, "bathroom": 30, "kitchen": 64, "living room": 144,
+            "dining room": 80, "garage": 240, "laundry room": 30, "office": 64
+        }
+        
+        for room in rooms:
+            room_type = room.get("type", "").lower()
+            w = float(room.get("size", {}).get("width", 0))
+            h = float(room.get("size", {}).get("length", 0))
+            area = w * h
+            
+            # Check against minimum sizes
+            for room_key, min_area in min_sizes.items():
+                if room_key in room_type:
+                    if area < min_area:
+                        penalty += (min_area - area) / min_area  # Normalized penalty
+                    break
+                    
+        return penalty
+    
+    def _entry_access_penalty(self, rooms: List[Dict]) -> float:
+        """Penalize layouts without proper entry access."""
+        penalty = 0.0
+        
+        # Check if living room touches boundary
+        living_room_accessible = False
+        for room in rooms:
+            if "living room" in room.get("type", "").lower():
+                x = float(room.get("position", {}).get("x", 0))
+                y = float(room.get("position", {}).get("y", 0))
+                w = float(room.get("size", {}).get("width", 0))
+                h = float(room.get("size", {}).get("length", 0))
+                
+                touches_boundary = (
+                    x <= 1.0 or y <= 1.0 or 
+                    x + w >= self.max_width - 1.0 or 
+                    y + h >= self.max_height - 1.0
+                )
+                
+                if touches_boundary:
+                    living_room_accessible = True
+                    break
+        
+        if not living_room_accessible:
+            penalty += 0.5  # Moderate penalty for no main entrance
+            
+        return penalty
+    
+    def _natural_light_penalty(self, rooms: List[Dict]) -> float:
+        """Penalize rooms without access to exterior walls."""
+        penalty = 0.0
+        
+        priority_rooms = ["living room", "kitchen", "bedroom", "dining room"]
+        
+        for room in rooms:
+            room_type = room.get("type", "").lower()
+            if any(priority in room_type for priority in priority_rooms):
+                x = float(room.get("position", {}).get("x", 0))
+                y = float(room.get("position", {}).get("y", 0))
+                w = float(room.get("size", {}).get("width", 0))
+                h = float(room.get("size", {}).get("length", 0))
+                
+                touches_exterior = (
+                    x <= 1.0 or y <= 1.0 or 
+                    x + w >= self.max_width - 1.0 or 
+                    y + h >= self.max_height - 1.0
+                )
+                
+                if not touches_exterior:
+                    penalty += 0.2  # Small penalty per room without light
+        
         return penalty
 
 

@@ -1,0 +1,18 @@
+{
+  "houseStyle": "Traditional",
+  "squareFeet": "2400",
+  "bedrooms": "4", 
+  "bathrooms": {
+    "full": "2",
+    "half": "1"
+  },
+  "garage": {
+    "attached": true,
+    "cars": "2"
+  },
+  "office": true,
+  "dimensions": {
+    "width": 50,
+    "depth": 40
+  }
+}
