@@ -1,0 +1,9 @@
+{
+  "houseStyle": "Traditional", 
+  "squareFeet": "3000",
+  "bedrooms": "5",
+  "bathrooms": {"full": "3", "half": "1"},
+  "garage": {"attached": true, "cars": "2"},
+  "office": true,
+  "dimensions": {"width": 30, "depth": 25}
+}

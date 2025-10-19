@@ -1,0 +1,7 @@
+{
+  "houseStyle": "Ranch",
+  "squareFeet": "1000",
+  "bedrooms": "2",
+  "bathrooms": {"full": "1"},
+  "dimensions": {"width": 30, "depth": 25}
+}
