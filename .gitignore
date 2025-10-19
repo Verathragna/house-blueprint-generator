@@ -1,5 +1,7 @@
 __pycache__/
 *.pyc
+venv/
+.venv/
 checkpoints/
 datasets/
 dataset/train.jsonl
