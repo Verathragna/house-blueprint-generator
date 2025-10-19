@@ -1,0 +1,12 @@
+{
+  "houseStyle": "Modern",
+  "squareFeet": "1800",
+  "bedrooms": "2", 
+  "bathrooms": {
+    "full": "1"
+  },
+  "dimensions": {
+    "width": 40,
+    "depth": 40
+  }
+}

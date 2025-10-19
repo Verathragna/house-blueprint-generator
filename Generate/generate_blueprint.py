@@ -20,12 +20,7 @@ from evaluation.validators import (
 )
 from evaluation.evaluate_sample import assert_room_counts, BoundaryViolationError
 from evaluation.architectural_rules import validate_architectural_rules, fix_architectural_issues
-from evaluation.smart_validation import (
-    assess_layout_feasibility,
-    progressive_constraint_relaxation,
-    smart_room_placement,
-    guaranteed_non_overlapping_layout
-)
+# Smart validation imports removed - integration incomplete
 from Generate.params import Params
 from evaluation.refinement import refine_layout
 
@@ -501,21 +496,9 @@ def main():
         layout_json = tk.decode_layout_tokens(layout_tokens)
         dump_layout(layout_json, f"attempt{attempt + 1}_raw")
 
-        # SMART VALIDATION: Assess feasibility before expensive processing
-        feasibility = assess_layout_feasibility(layout_json, max_w, max_h)
-        log.info(f"Layout feasibility assessment: {feasibility['recommended_action']} (severity: {feasibility['severity']})")
-        
-        if feasibility["recommended_action"] == "emergency_simplify":
-            log.warning("Layout deemed infeasible - applying emergency simplification")
-            layout_json = emergency_simplify_layout(layout_json, max_w, max_h)
-            dump_layout(layout_json, f"attempt{attempt + 1}_emergency_simplified")
-        elif feasibility["recommended_action"] == "aggressive_shrink":
-            log.info("Applying aggressive shrinking due to high density")
-            layout_json = shrink_to_fit(layout_json, max_w, max_h, target_fill=0.3)  # Very aggressive
-            dump_layout(layout_json, f"attempt{attempt + 1}_aggressive_shrunk")
-        elif feasibility["recommended_action"] == "moderate_shrink":
-            layout_json = shrink_to_fit(layout_json, max_w, max_h, target_fill=0.5)
-            dump_layout(layout_json, f"attempt{attempt + 1}_moderate_shrunk")
+        # Apply conservative shrinking to prevent overcrowding
+        layout_json = shrink_to_fit(layout_json, max_w, max_h, target_fill=0.6)
+        dump_layout(layout_json, f"attempt{attempt + 1}_conservative_shrunk")
 
         # Prune any excess rooms beyond the requested counts to prevent
         # pathological overlap/crowding before validation.
@@ -594,16 +577,15 @@ def main():
             )
         record_issues("initial_validation", issues, attempt=attempt + 1)
         if issues and not overlap_fix_used and has_overlap(issues):
-            # Use smart progressive approach instead of iterative algorithms
-            log.info("Applying smart room placement to resolve overlaps")
-            layout_json = smart_room_placement(layout_json, max_w, max_h)
-            dump_layout(layout_json, f"attempt{attempt + 1}_smart_placement")
-            
-            # Follow up with progressive constraint relaxation  
-            layout_json = progressive_constraint_relaxation(
-                layout_json, max_w, max_h, args.min_separation
+            layout_json = resolve_overlaps(
+                layout_json,
+                adjacency=build_sep_exempt_adjacency(layout_json),
+                max_width=max_w,
+                max_length=max_h,
+                max_iterations=10,  # Reduced from 20
+                separation_iterations=150,  # Reduced from 300
             )
-            dump_layout(layout_json, f"attempt{attempt + 1}_progressive_fix")
+            dump_layout(layout_json, f"attempt{attempt + 1}_overlap_fix")
             overlap_fix_used = True
             adjacency_issues = collect_adjacency_issues(layout_json)
             issues = validate_layout(
@@ -809,10 +791,13 @@ def main():
                         layout_json = layout_repaired
 
         if args.min_separation > 0:
-            # Use progressive constraint relaxation instead of enforce_min_separation
-            log.info(f"Applying progressive constraint relaxation for separation={args.min_separation}")
-            layout_json = progressive_constraint_relaxation(
-                layout_json, max_w, max_h, args.min_separation
+            layout_json = enforce_min_separation(
+                layout_json,
+                args.min_separation,
+                adjacency=build_sep_exempt_adjacency(layout_json),
+                max_width=max_w,
+                max_length=max_h,
+                max_iterations=50,  # Reduced to prevent long processing
             )
             dump_layout(layout_json, f"attempt{attempt + 1}_post_sep")
             adjacency_issues = collect_adjacency_issues(layout_json)
@@ -961,37 +946,31 @@ def main():
                                     + "; ".join(issues_repaired2)
                                 )
                     else:
-                        # ULTIMATE FALLBACK: Guaranteed non-overlapping layout
-                        log.warning("Applying ultimate fallback: guaranteed non-overlapping layout")
-                        layout_guaranteed = guaranteed_non_overlapping_layout(layout_json, max_w, max_h)
-                        dump_layout(layout_guaranteed, f"attempt{attempt + 1}_guaranteed")
+                        # EMERGENCY FALLBACK: Simple layout reduction
+                        log.warning("Applying emergency layout simplification...")
+                        emergency_layout = emergency_simplify_layout(layout_json, max_w, max_h)
+                        dump_layout(emergency_layout, f"attempt{attempt + 1}_emergency")
                         
-                        guaranteed_issues = validate_layout(
-                            layout_guaranteed,
+                        emergency_issues = validate_layout(
+                            emergency_layout,
                             max_width=max_w,
                             max_length=max_h,
-                            min_separation=0.0,  # Accept any separation for final fallback
+                            min_separation=0.0,  # Accept any separation for emergency fallback
                             adjacency=None,
                             require_connectivity=False
                         )
                         
-                        if not guaranteed_issues:
-                            layout_json = layout_guaranteed
-                            log.info("Ultimate fallback succeeded - using guaranteed layout")
+                        if not emergency_issues:
+                            layout_json = emergency_layout
+                            log.info("Emergency fallback succeeded - using simplified layout")
                         else:
                             dump_layout(layout_repaired, f"attempt{attempt + 1}_failed")
                             raise BoundaryViolationError(
-                                "Layout validation failed after all fallbacks including guaranteed layout: "
-                                + "; ".join(guaranteed_issues)
+                                "Layout validation failed after all fallbacks: "
+                                + "; ".join(emergency_issues)
                             )
-                        else:
-                            dump_layout(layout_repaired, f"attempt{attempt + 1}_failed")
-                            raise BoundaryViolationError(
-                                "Layout validation failed after clamping: "
-                                + "; ".join(issues_repaired)
-                            )
-                    else:
-                        layout_json = layout_repaired
+                else:
+                    layout_json = layout_repaired
 
         missing = assert_room_counts(layout_json, raw)
         if not missing:
