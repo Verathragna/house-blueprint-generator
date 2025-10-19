@@ -6,6 +6,7 @@ space utilization, and functional relationships.
 """
 import logging
 from typing import Dict, List, Tuple, Set
+from collections import deque
 import math
 
 logger = logging.getLogger(__name__)
@@ -88,18 +89,34 @@ def detect_unused_spaces(layout: Dict, boundary_width: float, boundary_height: f
 
 def _measure_unused_region(occupancy: List[List[bool]], visited: List[List[bool]], 
                           start_x: int, start_y: int, grid_w: int, grid_h: int) -> int:
-    """Measure contiguous unused region using flood fill."""
-    if (start_x < 0 or start_x >= grid_w or start_y < 0 or start_y >= grid_h or 
-        occupancy[start_y][start_x] or visited[start_y][start_x]):
+    """Measure contiguous unused region using an iterative flood fill (avoids recursion limits)."""
+    if (
+        start_x < 0
+        or start_x >= grid_w
+        or start_y < 0
+        or start_y >= grid_h
+        or occupancy[start_y][start_x]
+        or visited[start_y][start_x]
+    ):
         return 0
-    
+
+    q = deque([(start_x, start_y)])
     visited[start_y][start_x] = True
-    area = 1
-    
-    # Check 4-connected neighbors
-    for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
-        area += _measure_unused_region(occupancy, visited, start_x + dx, start_y + dy, grid_w, grid_h)
-    
+    area = 0
+
+    while q:
+        x, y = q.popleft()
+        area += 1
+        for dx, dy in ((0, 1), (0, -1), (1, 0), (-1, 0)):
+            nx, ny = x + dx, y + dy
+            if (
+                0 <= nx < grid_w
+                and 0 <= ny < grid_h
+                and not occupancy[ny][nx]
+                and not visited[ny][nx]
+            ):
+                visited[ny][nx] = True
+                q.append((nx, ny))
     return area
 
 def validate_room_adjacencies(layout: Dict) -> List[str]:
