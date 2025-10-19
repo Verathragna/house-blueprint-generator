@@ -751,19 +751,56 @@ def main():
         log.info(f"Basic validation after preprocessing found {len(basic_issues)} issues: {basic_issues[:5] if basic_issues else 'none'}")
         
         if not basic_issues or len(basic_issues) <= 8:  # Accept up to 8 issues from basic validation
-            log.info(f"Intelligent preprocessing produced acceptable layout ({len(basic_issues)} basic issues); writing outputs now")
+            log.info(f"Intelligent preprocessing produced acceptable layout ({len(basic_issues)} basic issues); running light packing and full validation")
             layout_json = clamp_bounds(layout_json, max_w, max_h)
-            json_path = f"{args.out_prefix}.json"
-            svg_path = f"{args.out_prefix}.svg"
-            try:
-                with open(json_path, "w", encoding="utf-8") as f:
-                    json.dump(layout_json, f, indent=2)
-                render_layout_svg(layout_json, svg_path, lot_dims=(max_w, max_h))
-                print(f"Wrote {json_path} and {svg_path}")
-            except OSError as e:
-                log.error("Failed to write outputs: %s", e)
-                sys.exit(1)
-            return  # Exit main early since we already wrote outputs
+
+            # Light packing to encourage wall-sharing + entrance, then enforce separation/connectivity
+            default_hints = {
+                "Bedroom": ["Bathroom", "Hallway"],
+                "Bathroom": ["Bedroom"],
+                "Kitchen": ["Dining Room", "Living Room", "Laundry Room"],
+                "Dining Room": ["Kitchen", "Living Room"],
+                "Living Room": ["Dining Room", "Kitchen"],
+                "Garage": ["Laundry Room"],
+                "Laundry Room": ["Kitchen", "Garage"],
+            }
+            layout_json = pack_layout(
+                layout_json,
+                max_width=max_w,
+                max_length=max_h,
+                grid=1.0,
+                adjacency_hints=default_hints,
+                zoning=True,
+                min_hall_width=4.0,
+            )
+            layout_json = enforce_min_separation(
+                layout_json,
+                args.min_separation,
+                adjacency=None,
+                max_width=max_w,
+                max_length=max_h,
+                max_iterations=60,
+            )
+            layout_json = clamp_bounds(layout_json, max_w, max_h)
+            # Ensure requested room counts are present; otherwise regenerate
+            missing = assert_room_counts(layout_json, raw)
+            if missing:
+                log.info("Preprocessed layout missing rooms %s; regenerating", ", ".join(m["room_type"] for m in missing))
+                continue
+
+            # Full validation including connectivity and adjacency requirements
+            preproc_issues = validate_layout(
+                layout_json,
+                max_width=max_w,
+                max_length=max_h,
+                min_separation=args.min_separation,
+                adjacency=adjacency,
+            )
+            if preproc_issues:
+                log.info("Preprocessed layout still has %d issues; falling back to standard processing", len(preproc_issues))
+            else:
+                dump_layout(layout_json, f"attempt{attempt + 1}_preprocessed_ok")
+                break
         else:
             log.info(f"Intelligent preprocessing found {len(basic_issues)} issues; falling back to standard processing")
 
