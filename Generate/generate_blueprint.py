@@ -151,12 +151,26 @@ def arrange_side_by_side(rooms: list, max_w: float, max_h: float) -> list:
 
 
 def arrange_in_grid(rooms: list, max_w: float, max_h: float, cols: int, rows: int) -> list:
-    """Arrange rooms in a grid pattern."""
-    spacing = 2.0
+    """Arrange rooms in a grid pattern with priority positioning for boundary access."""
+    spacing = 1.5  # Reduced spacing for better fit
     cell_w = (max_w - spacing * (cols + 1)) / cols
     cell_h = (max_h - spacing * (rows + 1)) / rows
     
-    for i, room in enumerate(rooms):
+    # Prioritize room placement - public rooms get boundary positions
+    boundary_priority = {
+        "living room": 1,
+        "kitchen": 2, 
+        "dining room": 3,
+        "garage": 4,
+        "bedroom": 5,
+        "bathroom": 6,
+        "laundry room": 7
+    }
+    
+    # Sort rooms by boundary priority
+    sorted_rooms = sorted(rooms, key=lambda r: boundary_priority.get(r.get("type", "").lower(), 99))
+    
+    for i, room in enumerate(sorted_rooms):
         if i >= cols * rows:
             break  # Don't exceed grid capacity
             
@@ -166,6 +180,17 @@ def arrange_in_grid(rooms: list, max_w: float, max_h: float, cols: int, rows: in
         # Position in grid cell
         x = spacing + col * (cell_w + spacing)
         y = spacing + row * (cell_h + spacing)
+        
+        # For boundary-priority rooms, adjust positioning
+        room_type = room.get("type", "").lower()
+        if "living room" in room_type:
+            # Place living room in bottom row for entrance
+            row = rows - 1
+            y = spacing + row * (cell_h + spacing)
+        elif "garage" in room_type and cols > 1:
+            # Place garage on right edge
+            col = cols - 1
+            x = spacing + col * (cell_w + spacing)
         
         # Size to fit cell with margin
         room_w = min(float(room["size"]["width"]), cell_w - 1)
@@ -185,11 +210,8 @@ def arrange_complex(rooms: list, max_w: float, max_h: float) -> list:
 
 
 def enforce_architectural_positioning(rooms: list, max_w: float, max_h: float) -> list:
-    """Ensure key architectural requirements are met without creating overlaps."""
-    # Instead of moving rooms (which creates overlaps), just prioritize boundary rooms in arrangement
-    # The grid arrangement should already handle positioning properly
-    
-    # Rule 1: Ensure living room has boundary access (already handled by arrangement)
+    """Ensure key architectural requirements are met with better boundary positioning."""
+    # Rule 1: Force living room to boundary for entrance access
     living_room = None
     for room in rooms:
         if "living room" in room.get("type", "").lower():
@@ -199,14 +221,18 @@ def enforce_architectural_positioning(rooms: list, max_w: float, max_h: float) -
     if living_room:
         pos = living_room["position"]
         size = living_room["size"]
-        # Check if already at boundary
-        at_boundary = (pos["y"] + size["length"] >= max_h - 1)
-        if at_boundary:
-            log.info(f"Living room already positioned for main entrance access")
-        else:
-            log.info(f"Living room positioned at ({pos['x']}, {pos['y']}) - may need boundary access")
+        
+        # Force living room to bottom boundary (front entrance)
+        new_y = max_h - size["length"]
+        living_room["position"]["y"] = new_y
+        
+        # Ensure it has enough width for entrance (minimum 3.5 ft)
+        if size["width"] < 4:
+            living_room["size"]["width"] = 4
+        
+        log.info(f"Positioned living room at boundary for main entrance: ({pos['x']}, {new_y})")
     
-    # Rule 2: Ensure garage has boundary access (already handled by arrangement)
+    # Rule 2: Position garage at boundary for vehicle access
     garage_room = None
     for room in rooms:
         if "garage" in room.get("type", "").lower():
@@ -216,14 +242,15 @@ def enforce_architectural_positioning(rooms: list, max_w: float, max_h: float) -
     if garage_room:
         pos = garage_room["position"]
         size = garage_room["size"]
-        # Check if already at boundary
-        at_boundary = (pos["x"] + size["width"] >= max_w - 1 or pos["x"] <= 1)
-        if at_boundary:
-            log.info(f"Garage already positioned for vehicle access")
-        else:
-            log.info(f"Garage positioned at ({pos['x']}, {pos['y']}) - may need boundary access")
+        
+        # Position garage at right boundary or bottom boundary
+        # Choose right boundary to separate from main entrance
+        new_x = max_w - size["width"]
+        garage_room["position"]["x"] = new_x
+        
+        log.info(f"Positioned garage at boundary for vehicle access: ({new_x}, {pos['y']})")
     
-    # Rule 3: Kitchen near dining if both present
+    # Rule 3: Keep kitchen and dining adjacent but don't force positioning that creates overlaps
     kitchen_room = None
     dining_room = None
     
@@ -235,17 +262,8 @@ def enforce_architectural_positioning(rooms: list, max_w: float, max_h: float) -
             dining_room = room
     
     if kitchen_room and dining_room:
-        # Position dining room adjacent to kitchen
-        k_pos = kitchen_room["position"]
-        k_size = kitchen_room["size"]
-        d_size = dining_room["size"]
-        
-        # Place dining room to the right of kitchen
-        dining_room["position"] = {
-            "x": float(k_pos["x"] + k_size["width"] + 1),
-            "y": float(k_pos["y"])
-        }
-        log.info(f"Positioned dining room adjacent to kitchen")
+        # Only log the adjacency requirement - don't force positioning
+        log.info(f"Kitchen and dining room should be positioned adjacently")
     
     return rooms
 
@@ -374,7 +392,7 @@ def main():
     ap.add_argument(
         "--min_separation",
         type=float,
-        default=0.5,  # Reduced from 1.0 for better convergence
+        default=0.2,  # Further reduced for much better convergence
         help="Minimum room separation; 0 disables post-processing",
     )
     ap.add_argument(
@@ -779,7 +797,7 @@ def main():
                 adjacency=None,
                 max_width=max_w,
                 max_length=max_h,
-                max_iterations=60,
+                max_iterations=30,
             )
             layout_json = clamp_bounds(layout_json, max_w, max_h)
             # Ensure requested room counts are present; otherwise regenerate
@@ -820,13 +838,13 @@ def main():
         available_area = max_w * max_h
         area_ratio = total_room_area / available_area if available_area > 0 else 1.0
         
-        # If rooms take up more than 50% of space, be very aggressive
-        if area_ratio > 0.5:
-            target_fill = 0.4  # Very conservative
-        elif area_ratio > 0.35:
-            target_fill = 0.5  # Conservative  
+        # Be more permissive with space usage to reduce overlap issues
+        if area_ratio > 0.6:
+            target_fill = 0.55  # Less aggressive reduction
+        elif area_ratio > 0.45:
+            target_fill = 0.6   # Moderate
         else:
-            target_fill = 0.6  # Moderate
+            target_fill = 0.7   # Allow higher density
             
         log.info(f"Total room area: {total_room_area:.1f}, Available: {available_area:.1f}, Ratio: {area_ratio:.2f}, Target fill: {target_fill}")
         layout_json = shrink_to_fit(layout_json, max_w, max_h, target_fill=target_fill)

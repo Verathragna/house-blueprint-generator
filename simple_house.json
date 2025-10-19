@@ -1,0 +1,17 @@
+{
+  "houseStyle": "Traditional",
+  "squareFeet": "1800",
+  "bedrooms": "2", 
+  "bathrooms": {
+    "full": "2",
+    "half": "0"
+  },
+  "garage": {
+    "attached": true,
+    "cars": "2"
+  },
+  "dimensions": {
+    "width": 50,
+    "depth": 45
+  }
+}

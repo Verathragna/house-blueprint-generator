@@ -1,0 +1,13 @@
+{
+  "houseStyle": "Traditional",
+  "squareFeet": "1200",
+  "bedrooms": "2", 
+  "bathrooms": {
+    "full": "1",
+    "half": "0"
+  },
+  "dimensions": {
+    "width": 35,
+    "depth": 35
+  }
+}
