@@ -19,6 +19,7 @@ from evaluation.validators import (
     pack_layout,
 )
 from evaluation.evaluate_sample import assert_room_counts, BoundaryViolationError
+from evaluation.architectural_rules import validate_architectural_rules, fix_architectural_issues
 from Generate.params import Params
 from evaluation.refinement import refine_layout
 
@@ -1036,6 +1037,28 @@ def main():
                 "Refinement produced a layout with issues: %s. Keeping pre-refined layout.",
                 "; ".join(refined_issues),
             )
+
+    # Apply architectural rules validation and fixes
+    log.info("Validating architectural rules...")
+    architectural_issues = validate_architectural_rules(layout_json, max_w, max_h)
+    if architectural_issues:
+        log.warning("Architectural issues found: %s", "; ".join(architectural_issues))
+        # Attempt to fix automatically
+        layout_json = fix_architectural_issues(layout_json, max_w, max_h)
+        log.info("Applied automatic architectural fixes")
+        
+        # Re-validate after fixes
+        architectural_issues_after_fix = validate_architectural_rules(layout_json, max_w, max_h)
+        if architectural_issues_after_fix:
+            log.warning("Remaining architectural issues: %s", "; ".join(architectural_issues_after_fix))
+        else:
+            log.info("All architectural issues resolved")
+        
+        # Ensure fixes didn't break basic layout constraints
+        layout_json = clamp_bounds(layout_json, max_w, max_h)
+        dump_layout(layout_json, "architectural_fixes_applied")
+    else:
+        log.info("No architectural issues found")
 
     final_issues = validate_layout(
         layout_json,

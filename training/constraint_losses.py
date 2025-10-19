@@ -79,11 +79,14 @@ class ConstraintLoss:
                 boundary_loss = self._boundary_loss(layout)
                 count_loss = self._room_count_loss(layout)
                 
+                architectural_loss = self._architectural_loss(layout)
+                
                 sample_constraint_loss = (
                     self.area_weight * area_loss +
                     self.overlap_weight * overlap_loss + 
                     self.boundary_weight * boundary_loss +
-                    self.count_weight * count_loss
+                    self.count_weight * count_loss +
+                    0.5 * architectural_loss  # Weight for architectural rules
                 )
                 
                 constraint_losses.append(sample_constraint_loss)
@@ -200,6 +203,102 @@ class ConstraintLoss:
         if room_count > 8:
             return (room_count - 8) ** 1.5
         return 0.0
+    
+    def _architectural_loss(self, layout: Dict) -> float:
+        """Penalize architectural rule violations."""
+        rooms = layout.get("layout", {}).get("rooms", [])
+        if not rooms:
+            return 0.0
+            
+        penalty = 0.0
+        
+        # 1. Garage accessibility penalty
+        garage_penalty = self._garage_access_penalty(rooms)
+        
+        # 2. Adjacency rule penalty
+        adjacency_penalty = self._adjacency_penalty(rooms)
+        
+        # 3. Useless hallway penalty  
+        hallway_penalty = self._useless_hallway_penalty(rooms)
+        
+        penalty = garage_penalty + adjacency_penalty + hallway_penalty
+        return penalty
+    
+    def _garage_access_penalty(self, rooms: List[Dict]) -> float:
+        """Penalize garages that don't touch boundary."""
+        penalty = 0.0
+        
+        for room in rooms:
+            if "garage" in room.get("type", "").lower():
+                x = float(room.get("position", {}).get("x", 0))
+                y = float(room.get("position", {}).get("y", 0))
+                w = float(room.get("size", {}).get("width", 0))
+                h = float(room.get("size", {}).get("length", 0))
+                
+                # Check if garage touches boundary
+                touches_boundary = (
+                    x <= 1.0 or y <= 1.0 or 
+                    x + w >= self.max_width - 1.0 or 
+                    y + h >= self.max_height - 1.0
+                )
+                
+                if not touches_boundary:
+                    penalty += 1.0  # Strong penalty for inaccessible garage
+                    
+        return penalty
+    
+    def _adjacency_penalty(self, rooms: List[Dict]) -> float:
+        """Penalize poor room adjacency choices."""
+        penalty = 0.0
+        
+        # Create room position lookup
+        room_centers = {}
+        for room in rooms:
+            room_type = room.get("type", "").lower()
+            x = float(room.get("position", {}).get("x", 0))
+            y = float(room.get("position", {}).get("y", 0))
+            w = float(room.get("size", {}).get("width", 0))
+            h = float(room.get("size", {}).get("length", 0))
+            
+            center_x = x + w / 2
+            center_y = y + h / 2
+            
+            if room_type not in room_centers:
+                room_centers[room_type] = []
+            room_centers[room_type].append((center_x, center_y))
+        
+        # Check kitchen-dining adjacency
+        if "kitchen" in room_centers and "dining room" in room_centers:
+            min_dist = float('inf')
+            for kx, ky in room_centers["kitchen"]:
+                for dx, dy in room_centers["dining room"]:
+                    dist = ((kx - dx) ** 2 + (ky - dy) ** 2) ** 0.5
+                    min_dist = min(min_dist, dist)
+            
+            if min_dist > 18.0:  # More than 18 feet apart
+                penalty += 0.5
+        
+        return penalty
+    
+    def _useless_hallway_penalty(self, rooms: List[Dict]) -> float:
+        """Penalize unnecessary or too-small hallways."""
+        penalty = 0.0
+        
+        for room in rooms:
+            if "hallway" in room.get("type", "").lower():
+                w = float(room.get("size", {}).get("width", 0))
+                h = float(room.get("size", {}).get("length", 0))
+                area = w * h
+                
+                # Penalize very small hallways
+                if area < 20.0:
+                    penalty += 0.3
+                    
+                # Penalize hallways when there are few rooms
+                if len(rooms) <= 4:
+                    penalty += 0.2
+                    
+        return penalty
 
 
 class PhysicsInformedLoss:

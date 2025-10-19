@@ -108,8 +108,15 @@ class RealisticLayoutGenerator:
         return room_list
     
     def _generate_simple_grid(self, room_types: List[str], rng: random.Random) -> Dict:
-        """Generate simple 2x2 grid layout for few rooms."""
+        """Generate simple 2x2 grid layout for few rooms with architectural rules."""
         rooms = []
+        
+        # Apply architectural rule: Remove unnecessary hallways
+        room_types = [r for r in room_types if not ("hallway" in r.lower() and len(room_types) <= 4)]
+        
+        # Apply architectural rule: Place garage on boundary
+        garage_rooms = [r for r in room_types if "garage" in r.lower()]
+        non_garage_rooms = [r for r in room_types if "garage" not in r.lower()]
         
         # Calculate grid dimensions
         n_rooms = len(room_types)
@@ -123,22 +130,43 @@ class RealisticLayoutGenerator:
         cell_w = (self.max_width - self.min_spacing * (cols + 1)) / cols
         cell_h = (self.max_height - self.min_spacing * (rows + 1)) / rows
         
-        for i, room_type in enumerate(room_types):
-            col = i % cols
-            row = i // cols
+        # Place garage first (if any) on boundary
+        room_index = 0
+        for garage_type in garage_rooms:
+            # Always place garage on right boundary for vehicle access
+            room_w, room_h = self._choose_room_size(garage_type, cell_w * 0.8, cell_h * 0.8, rng)
+            x = self.max_width - room_w  # Right boundary
+            y = max(0, (self.max_height - room_h) / 2)  # Centered vertically
+            
+            rooms.append({
+                "type": garage_type,
+                "position": {"x": int(x), "y": int(y)},
+                "size": {"width": int(room_w), "length": int(room_h)}
+            })
+            room_index += 1
+        
+        # Apply architectural adjacency rules for room placement
+        prioritized_rooms = self._prioritize_rooms_by_adjacency(non_garage_rooms)
+        
+        # Place remaining rooms in grid, avoiding garage area
+        for i, room_type in enumerate(prioritized_rooms):
+            # Calculate position avoiding garage area on right side
+            available_cols = cols - (1 if garage_rooms else 0)
+            col = i % available_cols
+            row = i // available_cols
             
             # Choose room size
             room_w, room_h = self._choose_room_size(room_type, cell_w * 0.8, cell_h * 0.8, rng)
             
-            # Center in grid cell
+            # Center in grid cell, but avoid garage area
             cell_center_x = self.min_spacing + col * (cell_w + self.min_spacing) + cell_w / 2
             cell_center_y = self.min_spacing + row * (cell_h + self.min_spacing) + cell_h / 2
             
             x = max(0, cell_center_x - room_w / 2)
             y = max(0, cell_center_y - room_h / 2)
             
-            # Ensure within bounds
-            x = min(x, self.max_width - room_w)
+            # Ensure within bounds and not overlapping garage
+            x = min(x, self.max_width - room_w - (25 if garage_rooms else 0))  # Leave space for garage
             y = min(y, self.max_height - room_h)
             
             rooms.append({
@@ -296,9 +324,37 @@ class RealisticLayoutGenerator:
             return w * scale, h * scale
             
         return rng.choice(valid_options)
+    
+    def _prioritize_rooms_by_adjacency(self, room_types: List[str]) -> List[str]:
+        """Prioritize room placement to follow architectural adjacency rules."""
+        # Define adjacency preferences (which rooms should be near each other)
+        adjacency_groups = [
+            ["kitchen", "dining room"],  # Kitchen-dining adjacency
+            ["living room", "dining room"],  # Living-dining adjacency
+            ["bedroom", "bathroom"],  # Bedroom-bathroom adjacency
+            ["laundry room", "kitchen"],  # Laundry-kitchen adjacency
+        ]
+        
+        prioritized = []
+        remaining = room_types.copy()
+        
+        # First, place rooms that have strong adjacency requirements
+        for group in adjacency_groups:
+            group_rooms = [r for r in remaining if any(g in r.lower() for g in group)]
+            if group_rooms:
+                # Add the whole adjacency group together
+                for room in group_rooms:
+                    if room in remaining:
+                        prioritized.append(room)
+                        remaining.remove(room)
+        
+        # Add any remaining rooms
+        prioritized.extend(remaining)
+        
+        return prioritized
 
 
-def generate_realistic_dataset(num_samples: int = 1000, 
+def generate_realistic_dataset(num_samples: int = 1000,
                              output_path: str = "dataset/realistic_layouts.jsonl",
                              seed: int = None) -> None:
     """Generate dataset of realistic layouts."""

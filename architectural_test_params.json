@@ -1,0 +1,15 @@
+{
+  "houseStyle": "Contemporary",
+  "squareFeet": "2200",
+  "bedrooms": "3", 
+  "bathrooms": {
+    "full": "2"
+  },
+  "garage": {
+    "attached": true
+  },
+  "dimensions": {
+    "width": 40,
+    "depth": 40
+  }
+}
