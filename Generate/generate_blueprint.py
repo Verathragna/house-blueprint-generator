@@ -446,6 +446,43 @@ def main():
     )
     args = ap.parse_args()
 
+    # Initialize debug dump and issue recording utilities early (used by CP-SAT path too)
+    debug_dump_dir = getattr(args, "debug_dump", None)
+    if debug_dump_dir:
+        try:
+            os.makedirs(debug_dump_dir, exist_ok=True)
+        except OSError as exc:
+            log.warning("Failed to ensure debug dump directory %s: %s", debug_dump_dir, exc)
+            debug_dump_dir = None
+
+    def dump_layout(layout_dict, label):
+        if not debug_dump_dir:
+            return
+        filename = os.path.join(debug_dump_dir, f"{args.out_prefix}_{label}.json")
+        try:
+            with open(filename, "w", encoding="utf-8") as fh:
+                json.dump(layout_dict, fh, indent=2)
+        except OSError as exc:
+            log.warning("Failed to write debug dump %s: %s", filename, exc)
+
+    issues_log_path = args.issues_log
+
+    def record_issues(stage, issues, attempt=None, extra=None):
+        if not issues_log_path or not issues:
+            return
+        entry = {
+            "stage": stage,
+            "attempt": attempt,
+            "issues": issues,
+            "extra": extra or {},
+        }
+        try:
+            with open(issues_log_path, "a", encoding="utf-8") as fh:
+                json.dump(entry, fh)
+                fh.write("\n")
+        except OSError as exc:
+            log.warning("Failed to append issues to %s: %s", issues_log_path, exc)
+
     try:
         with open(args.params_json, "r", encoding="utf-8") as f:
             raw = json.load(f)
@@ -596,41 +633,6 @@ def main():
             log.warning("Failed to cache weights to %s: %s", CKPT, exc)
 
 
-    debug_dump_dir = getattr(args, "debug_dump", None)
-    if debug_dump_dir:
-        try:
-            os.makedirs(debug_dump_dir, exist_ok=True)
-        except OSError as exc:
-            log.warning("Failed to ensure debug dump directory %s: %s", debug_dump_dir, exc)
-            debug_dump_dir = None
-
-    def dump_layout(layout_dict, label):
-        if not debug_dump_dir:
-            return
-        filename = os.path.join(debug_dump_dir, f"{args.out_prefix}_{label}.json")
-        try:
-            with open(filename, "w", encoding="utf-8") as fh:
-                json.dump(layout_dict, fh, indent=2)
-        except OSError as exc:
-            log.warning("Failed to write debug dump %s: %s", filename, exc)
-
-    issues_log_path = args.issues_log
-
-    def record_issues(stage, issues, attempt=None, extra=None):
-        if not issues_log_path or not issues:
-            return
-        entry = {
-            "stage": stage,
-            "attempt": attempt,
-            "issues": issues,
-            "extra": extra or {},
-        }
-        try:
-            with open(issues_log_path, "a", encoding="utf-8") as fh:
-                json.dump(entry, fh)
-                fh.write("\n")
-        except OSError as exc:
-            log.warning("Failed to append issues to %s: %s", issues_log_path, exc)
 
     prefix = tk.encode_params(params.model_dump())
     adjacency = params.adjacency.root if params.adjacency else None

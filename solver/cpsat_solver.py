@@ -132,7 +132,14 @@ def solve_layout_cpsat(
             model.AddBoolOr([left, right, below, above])
 
     # Objective: maximize total room area + mild preference for boundary touch for some types
-    area_terms = [ws[i] * ls[i] for i in range(n)]
+    # OR-Tools does not support multiplying two decision vars directly in a linear expression.
+    # Introduce auxiliary area vars with multiplication equality constraints.
+    area_terms = []
+    max_area = int(max_width) * int(max_length)
+    for i in range(n):
+        area_i = model.NewIntVar(0, max_area, f"area_{i}")
+        model.AddMultiplicationEquality(area_i, [ws[i], ls[i]])
+        area_terms.append(area_i)
 
     # Encourage certain rooms to touch a boundary by minimizing distance to boundary
     # We linearize by adding negative weights for min distance to any side via helper vars
