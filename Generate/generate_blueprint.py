@@ -375,6 +375,13 @@ def main():
     ap.add_argument("--out_prefix", type=str, default="generated_blueprint")
     ap.add_argument("--device", type=str, default="cpu", help="Device to run the model on")
     ap.add_argument(
+        "--backend",
+        type=str,
+        default="auto",
+        choices=["auto", "cp", "model"],
+        help="Generation backend: CP-SAT optimizer, model decoding, or auto (try CP then fallback)",
+    )
+    ap.add_argument(
         "--checkpoint",
         type=str,
         default=None,
@@ -469,6 +476,73 @@ def main():
                 analysis.get('efficiency', 0), analysis.get('room_count', 0))
 
     tk = BlueprintTokenizer()
+
+    # Dimensions (early; needed for CP backend too)
+    dims = raw.get("dimensions") or {}
+    max_w = float(dims.get("width", 40))
+    max_h = float(dims.get("depth", dims.get("height", 40)))
+
+    # Optional CP-SAT backend: try first if requested/auto
+    layout_json = None
+    if args.backend in ("cp", "auto"):
+        try:
+            from solver.cpsat_solver import solve_layout_cpsat, build_intent_from_params  # type: ignore
+
+            intent = build_intent_from_params(raw)
+            cp_layout = solve_layout_cpsat(
+                intent,
+                max_width=int(round(max_w)),
+                max_length=int(round(max_h)),
+                min_separation=int(round(args.min_separation)),
+                time_limit_s=8.0,
+            )
+            if cp_layout:
+                dump_layout(cp_layout, "cp_raw")
+                # Light post-processing to encourage adjacency/connectivity
+                default_hints = {
+                    "Bedroom": ["Bathroom", "Hallway"],
+                    "Bathroom": ["Bedroom"],
+                    "Kitchen": ["Dining Room", "Living Room", "Laundry Room"],
+                    "Dining Room": ["Kitchen", "Living Room"],
+                    "Living Room": ["Dining Room", "Kitchen"],
+                    "Garage": ["Laundry Room"],
+                    "Laundry Room": ["Kitchen", "Garage"],
+                }
+                cp_layout = pack_layout(
+                    cp_layout,
+                    max_width=max_w,
+                    max_length=max_h,
+                    grid=1.0,
+                    adjacency_hints=default_hints,
+                    zoning=True,
+                    min_hall_width=4.0,
+                )
+                cp_layout = clamp_bounds(cp_layout, max_w, max_h)
+                issues = validate_layout(
+                    cp_layout,
+                    max_width=max_w,
+                    max_length=max_h,
+                    min_separation=args.min_separation,
+                    adjacency=adjacency if 'adjacency' in locals() else None,
+                )
+                record_issues("cp_validation", issues, attempt=1)
+                if not issues or args.backend == "cp":
+                    layout_json = cp_layout
+        except ImportError:
+            log.info("OR-Tools not installed; skipping CP-SAT backend")
+        except Exception as exc:
+            log.warning("CP-SAT backend failed: %s", exc)
+
+    # If CP-SAT produced a valid layout, skip model decoding
+    if layout_json is not None and args.backend in ("cp", "auto"):
+        # proceed to output/refinement path below, bypassing model decode loop
+        missing = assert_room_counts(layout_json, raw)
+        if missing:
+            log.info("CP layout missing required rooms; continuing with model backend")
+            layout_json = None
+
+    if layout_json is None:
+        # Fall back to model-based decoding
 
     # Load checkpoint first so we can configure the model to match its dimensions
     ckpt_path = resolve_checkpoint_path(args.checkpoint)
@@ -703,9 +777,6 @@ def main():
         bias_tokens[tk.token_to_id["GARAGE"]] = 2.0
         max_counts_by_type["garage"] = 1
 
-    dims = raw.get("dimensions") or {}
-    max_w = float(dims.get("width", 40))
-    max_h = float(dims.get("depth", dims.get("height", 40)))
 
     decode_kwargs = {
         "max_len": 160,
