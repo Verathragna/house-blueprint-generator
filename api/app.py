@@ -90,6 +90,20 @@ ERROR_COUNT = Counter(
 
 class Metadata(BaseModel):
     processing_time: float
+    version: Optional[str] = None
+    backend_requested: Optional[str] = None
+    backend_used: Optional[str] = None
+    attempts: Optional[int] = None
+    strategy: Optional[str] = None
+    temperature: Optional[float] = None
+    beam_size: Optional[int] = None
+    min_separation: Optional[float] = None
+    guided_topk: Optional[int] = None
+    guided_beam: Optional[int] = None
+    seed: Optional[int] = None
+    issues_count: Optional[int] = None
+    note: Optional[str] = None
+    dims: Optional[Dict[str, float]] = None
 
 
 class GenerateRequest(BaseModel):
@@ -206,6 +220,9 @@ _tokenizer = BlueprintTokenizer()
 _model = None
 _lock = threading.Lock()
 
+# Orchestrator (unified generation pipeline)
+from Generate.orchestrator import generate_layout as orchestrate_generate
+
 # simple in-memory rate limiter: requests per API key per minute
 RATE_LIMIT = int(os.environ.get("RATE_LIMIT", "60"))
 _WINDOW_SECONDS = 60
@@ -266,162 +283,27 @@ def _worker():
             job["logs"].append("Model loaded")
             job["event"].set()
 
-            prefix = _tokenizer.encode_params(params.model_dump())
-            room_counts = {}
-            bias_tokens = {}
-            if "bedrooms" in raw_params:
-                room_counts[_tokenizer.token_to_id["BEDROOM"]] = params.bedrooms
-            if "bathrooms" in raw_params:
-                baths = params.bathrooms.full + params.bathrooms.half
-                room_counts[_tokenizer.token_to_id["BATHROOM"]] = baths
-            if raw_params.get("garage"):
-                tid = _tokenizer.token_to_id["GARAGE"]
-                room_counts[tid] = 1
-                bias_tokens[tid] = 2.0
+            layout_json, meta = orchestrate_generate(
+                params=params,
+                raw_params=raw_params,
+                backend="auto",
+                strategy=strategy,
+                temperature=temperature,
+                beam_size=beam_size,
+                min_separation=min_sep,
+                guided_topk=guided_topk,
+                guided_beam=guided_beam,
+                refine_iters=refine_iters,
+                refine_temp=refine_temp,
+                device=DEVICE,
+                checkpoint=None,
+                tokenizer=_tokenizer,
+                model=model,
+            )
 
             dims = raw_params.get("dimensions") or {}
             max_w = float(dims.get("width", 40))
             max_h = float(dims.get("depth", dims.get("height", 40)))
-
-            adjacency_map = params.adjacency.root if params.adjacency else None
-            adjacency_requirements = _tokenizer.adjacency_requirements_from_params(adjacency_map)
-
-            def partial_validator(layout_dict):
-                rooms = (layout_dict.get("layout") or {}).get("rooms", [])
-                if not rooms:
-                    return []
-                return validate_layout(
-                    layout_dict,
-                    max_width=max_w,
-                    max_length=max_h,
-                    min_separation=min_sep,
-                    adjacency=adjacency_map,
-                    require_connectivity=False,
-                )
-
-            max_attempts = 3
-            layout_json = None
-            missing = []
-            decode_kwargs = {
-                "max_len": 160,
-                "strategy": strategy,
-                "temperature": temperature,
-                "beam_size": beam_size,
-                "required_counts": room_counts,
-                "bias_tokens": bias_tokens,
-                "tokenizer": _tokenizer,
-                "max_width": max_w,
-                "max_length": max_h,
-                "adjacency_requirements": adjacency_requirements,
-            }
-            if strategy == "guided":
-                decode_kwargs.update(
-                    {
-                        "constraint_validator": partial_validator,
-                        "validator_min_rooms": 1,
-                        "guided_top_k": guided_topk,
-                        "guided_beam_size": guided_beam,
-                    }
-                )
-            for attempt in range(max_attempts):
-                job["logs"].append("Decoding layout")
-                job["event"].set()
-                layout_tokens = decode(
-                    model,
-                    prefix,
-                    **decode_kwargs,
-                )
-                layout_json = _tokenizer.decode_layout_tokens(layout_tokens)
-
-                issues = validate_layout(
-                    layout_json,
-                    max_width=max_w,
-                    max_length=max_h,
-                    min_separation=0,
-                    adjacency=adjacency_map,
-                )
-                if issues:
-                    if attempt < max_attempts - 1:
-                        job["logs"].append(
-                            f"Layout validation failed: {'; '.join(issues)}, retrying"
-                        )
-                        job["event"].set()
-                        continue
-                    layout_json = clamp_bounds(layout_json, max_w, max_h)
-                    issues = validate_layout(
-                        layout_json,
-                        max_width=max_w,
-                        max_length=max_h,
-                        min_separation=0,
-                        adjacency=adjacency_map,
-                    )
-                    if issues:
-                        raise BoundaryViolationError(
-                            "Layout validation failed: " + "; ".join(issues)
-                        )
-
-                if min_sep > 0:
-                    layout_json = enforce_min_separation(layout_json, min_sep)
-                    issues = validate_layout(
-                        layout_json,
-                        max_width=max_w,
-                        max_length=max_h,
-                        min_separation=min_sep,
-                        adjacency=adjacency_map,
-                    )
-                    if issues:
-                        if attempt < max_attempts - 1:
-                            job["logs"].append(
-                                f"Layout validation failed: {'; '.join(issues)}, retrying"
-                            )
-                            job["event"].set()
-                            continue
-                        layout_json = clamp_bounds(layout_json, max_w, max_h)
-                        issues = validate_layout(
-                            layout_json,
-                            max_width=max_w,
-                            max_length=max_h,
-                            min_separation=min_sep,
-                            adjacency=adjacency_map,
-                        )
-                        if issues:
-                            raise BoundaryViolationError(
-                                "Layout validation failed: " + "; ".join(issues)
-                            )
-
-                missing = assert_room_counts(layout_json, raw_params)
-                if not missing:
-                    break
-                if attempt < max_attempts - 1:
-                    job["logs"].append(
-                        f"Missing rooms { [m['room_type'] for m in missing] }, retrying"
-                    )
-                    job["event"].set()
-                    continue
-                rooms = layout_json.setdefault("layout", {}).setdefault("rooms", [])
-                for miss in missing:
-                    token_key = miss["room_type"].upper()
-                    wtok, ltok = _tokenizer.default_room_dims.get(token_key, ("W12", "L12"))
-                    rooms.append(
-                        {
-                            "type": miss["room_type"].capitalize(),
-                            "position": {"x": 0, "y": 0},
-                            "size": {"width": int(wtok[1:]), "length": int(ltok[1:])},
-                        }
-                    )
-                layout_json = clamp_bounds(layout_json, max_w, max_h)
-                issues = validate_layout(
-                    layout_json,
-                    max_width=max_w,
-                    max_length=max_h,
-                    min_separation=min_sep,
-                )
-                if issues:
-                    raise BoundaryViolationError(
-                        "Layout validation failed after injecting placeholders: "
-                        + "; ".join(issues)
-                    )
-                break
 
             job["logs"].append("Rendering layout")
             job["event"].set()
@@ -478,7 +360,23 @@ def _worker():
                 saved_json_path=json_path,
                 svg_filename=svg_filename,
                 json_filename=json_filename,
-                metadata=Metadata(processing_time=processing_time),
+                metadata=Metadata(
+                    processing_time=processing_time,
+                    version=meta.get("version"),
+                    backend_requested=meta.get("backend_requested"),
+                    backend_used=meta.get("backend_used"),
+                    attempts=meta.get("attempts"),
+                    strategy=meta.get("strategy"),
+                    temperature=meta.get("temperature"),
+                    beam_size=meta.get("beam_size"),
+                    min_separation=meta.get("min_separation"),
+                    guided_topk=meta.get("guided_topk"),
+                    guided_beam=meta.get("guided_beam"),
+                    seed=meta.get("seed"),
+                    issues_count=meta.get("issues_count"),
+                    note=meta.get("note"),
+                    dims=meta.get("dims"),
+                ),
             )
 
             job["status"] = "completed"

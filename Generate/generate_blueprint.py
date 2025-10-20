@@ -24,6 +24,7 @@ from evaluation.feasibility_checker import check_layout_feasibility
 # Smart validation imports removed - integration incomplete
 from Generate.params import Params
 from evaluation.refinement import refine_layout
+from Generate.orchestrator import generate_layout as orchestrate_generate
 
 log = logging.getLogger(__name__)
 
@@ -444,6 +445,11 @@ def main():
         default=8,
         help="Beam width when using guided decoding",
     )
+    ap.add_argument(
+        "--legacy",
+        action="store_true",
+        help="Use legacy generator pipeline (deprecated)",
+    )
     args = ap.parse_args()
 
     # Initialize debug dump and issue recording utilities early (used by CP-SAT path too)
@@ -533,6 +539,47 @@ def main():
         log.info("Layout feasibility confirmed - proceeding with generation")
         log.info("Space efficiency: %.1f%%, Room count: %d", 
                 analysis.get('efficiency', 0), analysis.get('room_count', 0))
+
+    # New unified path: orchestrator (unless legacy requested)
+    if not getattr(args, "legacy", False):
+        dims = raw.get("dimensions") or {}
+        max_w = float(dims.get("width", 40))
+        max_h = float(dims.get("depth", dims.get("height", 40)))
+        # Instantiate tokenizer/model here so tests can monkeypatch this module
+        tk_local = BlueprintTokenizer()
+        model_local = LayoutTransformer(tk_local.get_vocab_size())
+        layout_json, meta = orchestrate_generate(
+            params=params,
+            raw_params=raw,
+            backend=args.backend,
+            strategy=args.strategy,
+            temperature=args.temperature,
+            beam_size=args.beam_size,
+            min_separation=args.min_separation,
+            guided_topk=args.guided_topk,
+            guided_beam=args.guided_beam,
+            refine_iters=args.refine_iters,
+            refine_temp=args.refine_temp,
+            device=args.device,
+            checkpoint=args.checkpoint,
+            tokenizer=tk_local,
+            model=model_local,
+        )
+        json_path = f"{args.out_prefix}.json"
+        svg_path = f"{args.out_prefix}.svg"
+        try:
+            with open(json_path, "w", encoding="utf-8") as f:
+                json.dump(layout_json, f, indent=2)
+        except OSError as e:
+            log.error("Failed to write layout JSON to %s: %s", json_path, e)
+            sys.exit(1)
+        try:
+            render_layout_svg(layout_json, svg_path, lot_dims=(max_w, max_h))
+        except OSError as e:
+            log.error("Failed to write SVG to %s: %s", svg_path, e)
+            sys.exit(1)
+        print(f"Wrote {json_path} and {svg_path}")
+        return
 
     tk = BlueprintTokenizer()
 
