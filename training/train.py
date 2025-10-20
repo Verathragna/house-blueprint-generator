@@ -95,6 +95,26 @@ def ensure_dataset(train_path: str, val_path: str) -> bool:
         return False
     return os.path.exists(train_path) and os.path.exists(val_path)
 
+def find_latest_checkpoint():
+    """Find the most recent checkpoint file, preferring full checkpoints with epoch info."""
+    # Look for epoch checkpoints first (they have full training state)
+    epoch_files = [f for f in os.listdir(CHECKPOINT_DIR) if f.startswith("epoch_") and f.endswith(".pt")]
+    if epoch_files:
+        def epnum(fn):
+            m = re.search(r"epoch_(\d+)\.pt", fn)
+            return int(m.group(1)) if m else -1
+        
+        epoch_files.sort(key=epnum)
+        latest_epoch_path = os.path.join(CHECKPOINT_DIR, epoch_files[-1])
+        return latest_epoch_path
+    
+    # Fallback to model_latest.pth (model weights only)
+    latest_path = os.path.join(CHECKPOINT_DIR, "model_latest.pth")
+    if os.path.exists(latest_path):
+        return latest_path
+        
+    return None
+
 def train(
     epochs=20,
     batch_size=16,
@@ -104,6 +124,7 @@ def train(
     device="cpu",
     resume=None,
     save_weights=False,
+    auto_resume=True,
 ):
     tk = BlueprintTokenizer()
     vocab_size = tk.get_vocab_size()
@@ -147,18 +168,40 @@ def train(
     scaler = torch.cuda.amp.GradScaler(enabled=torch.cuda.is_available() and str(device) != "cpu")
 
     start_epoch = 0
+    # Auto-resume from latest checkpoint if enabled and no explicit resume path
+    if auto_resume and not resume:
+        resume = find_latest_checkpoint()
+        if resume:
+            print(f"Auto-resuming from latest checkpoint: {resume}")
+    
     if resume and os.path.exists(resume):
         print(f"Resuming from checkpoint {resume}...")
-        checkpoint = torch.load(resume, map_location=device)
-        model.load_state_dict(checkpoint.get("model", checkpoint))
-        model.to(device)
-        if "optimizer" in checkpoint:
-            opt.load_state_dict(checkpoint["optimizer"])
-            for state in opt.state.values():
-                for k, v in state.items():
-                    if isinstance(v, torch.Tensor):
-                        state[k] = v.to(device)
-        start_epoch = checkpoint.get("epoch", -1) + 1
+        try:
+            checkpoint = torch.load(resume, map_location=device)
+            
+            # Handle both full checkpoints and model-only checkpoints
+            if "model" in checkpoint:
+                model.load_state_dict(checkpoint["model"])
+                if "optimizer" in checkpoint:
+                    opt.load_state_dict(checkpoint["optimizer"])
+                    for state in opt.state.values():
+                        for k, v in state.items():
+                            if isinstance(v, torch.Tensor):
+                                state[k] = v.to(device)
+                start_epoch = checkpoint.get("epoch", -1) + 1
+                print(f"Resuming from epoch {start_epoch}")
+            else:
+                # Model-only checkpoint (like model_latest.pth)
+                model.load_state_dict(checkpoint)
+                print("Loaded model weights, starting epoch counting from 0")
+                
+            model.to(device)
+        except Exception as e:
+            print(f"Failed to load checkpoint {resume}: {e}")
+            print("Starting training from scratch...")
+            start_epoch = 0
+    elif resume:
+        print(f"Checkpoint {resume} not found, starting from scratch...")
 
     # LR scheduler: linear warmup then cosine decay across all steps
     total_steps = epochs * max(1, len(train_loader))
@@ -236,6 +279,7 @@ if __name__ == "__main__":
     ap.add_argument("--device", type=str, default="cpu")
     ap.add_argument("--resume", type=str, default=None, help="path to checkpoint to resume from")
     ap.add_argument("--save_weights", action="store_true", help="also save per-epoch raw weight files")
+    ap.add_argument("--no_auto_resume", action="store_true", help="disable automatic resume from latest checkpoint")
     args = ap.parse_args()
     train(
         args.epochs,
@@ -246,4 +290,5 @@ if __name__ == "__main__":
         args.device,
         args.resume,
         args.save_weights,
+        auto_resume=not args.no_auto_resume,
     )
