@@ -543,6 +543,7 @@ def main():
 
     if layout_json is None:
         # Fall back to model-based decoding
+        pass
 
     # Load checkpoint first so we can configure the model to match its dimensions
     ckpt_path = resolve_checkpoint_path(args.checkpoint)
