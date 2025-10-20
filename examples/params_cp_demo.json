@@ -1,0 +1,18 @@
+{
+  "dimensions": { "width": 40, "depth": 35 },
+  "bedrooms": 3,
+  "bathrooms": { "full": 2, "half": 1 },
+  "kitchen": 1,
+  "livingRooms": 1,
+  "diningRooms": 1,
+  "laundryRooms": 1,
+  "garage": { "attached": true },
+  "squareFeet": 1800,
+  "adjacency": {
+    "Kitchen": ["Dining Room", "Living Room", "Laundry Room"],
+    "Dining Room": ["Kitchen", "Living Room"],
+    "Living Room": ["Kitchen", "Dining Room"],
+    "Bedroom": ["Bathroom", "Hallway"],
+    "Laundry Room": ["Kitchen", "Garage"]
+  }
+}
