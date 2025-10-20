@@ -25,6 +25,9 @@ MIN_ROOM_SIZES = {
 CIRCULATION_FACTOR = 0.15      # 15% space needed for hallways/circulation
 SPACING_FACTOR = 0.10          # 10% space needed for walls/spacing between rooms
 USABLE_SPACE_RATIO = 1.0 - CIRCULATION_FACTOR - SPACING_FACTOR  # 75% usable
+# Require some slack beyond bare minimum to allow walls, doors, and separation.
+# If required area exceeds this ratio of usable space, treat as not feasible.
+SAFETY_MARGIN_RATIO = 0.90  # require at least 10% headroom
 
 
 def check_layout_feasibility(params: Dict) -> Tuple[bool, str, Dict]:
@@ -56,7 +59,7 @@ def check_layout_feasibility(params: Dict) -> Tuple[bool, str, Dict]:
             f"Space available: {usable_area:.0f} sq ft (75% of {total_area:.0f} sq ft)\n"
             f"Shortage: {shortage:.0f} sq ft\n\n"
             f"💡 Suggestions:\n"
-            f"• Increase dimensions to {width}x{height + math.ceil(shortage/width)} ft\n"
+            f"• Increase dimensions to {width + math.ceil(shortage / (USABLE_SPACE_RATIO * height))}x{height} ft or {width}x{height + math.ceil(shortage / (USABLE_SPACE_RATIO * width))} ft\n"
             f"• Reduce bedrooms by {max(1, len([r for r in required_rooms if 'bedroom' in r.lower()]) - 2)}\n"
             f"• Remove garage (-240 sq ft) or laundry room (-48 sq ft)"
         )
@@ -71,6 +74,31 @@ def check_layout_feasibility(params: Dict) -> Tuple[bool, str, Dict]:
             "suggestions": generate_suggestions(params, shortage, width, height)
         }
         
+        return False, message, analysis
+
+    # Require safety margin for generation robustness
+    margin_cap = usable_area * SAFETY_MARGIN_RATIO
+    if min_area_needed > margin_cap:
+        shortage = min_area_needed - margin_cap
+        efficiency = (min_area_needed / usable_area) * 100
+        message = (
+            f"❌ Layout NOT FEASIBLE - Too tight ({efficiency:.1f}% of usable)\n"
+            f"Minimum room area leaves insufficient slack for walls, doors and separation.\n"
+            f"Space available (usable): {usable_area:.0f} sq ft; Required minimum: {min_area_needed:.0f} sq ft;\n"
+            f"Need at least {(1-SAFETY_MARGIN_RATIO)*100:.0f}% headroom.\n\n"
+            f"💡 Suggestions:\n"
+            f"• Increase dimensions to {width + math.ceil(shortage / (USABLE_SPACE_RATIO * height))}x{height} ft or {width}x{height + math.ceil(shortage / (USABLE_SPACE_RATIO * width))} ft\n"
+            f"• Or reduce room counts (e.g., bedrooms/bathrooms) or remove garage"
+        )
+        analysis = {
+            "feasible": False,
+            "total_area": total_area,
+            "usable_area": usable_area,
+            "required_area": min_area_needed,
+            "shortage": shortage,
+            "room_breakdown": get_room_breakdown(required_rooms),
+            "suggestions": generate_suggestions(params, shortage, width, height),
+        }
         return False, message, analysis
     
     # Check dimensional constraints (can rooms actually fit?)
@@ -284,8 +312,8 @@ def generate_suggestions(params: Dict, shortage: float, width: float, height: fl
     suggestions = []
     
     # Dimension suggestions
-    new_width = width + math.ceil(shortage / height)
-    new_height = height + math.ceil(shortage / width)
+    new_width = width + math.ceil(shortage / (USABLE_SPACE_RATIO * height))
+    new_height = height + math.ceil(shortage / (USABLE_SPACE_RATIO * width))
     suggestions.append(f"Increase to {new_width}x{height}ft or {width}x{new_height}ft")
     
     # Room reduction suggestions

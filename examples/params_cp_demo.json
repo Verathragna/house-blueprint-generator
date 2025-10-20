@@ -1,5 +1,5 @@
 {
-  "dimensions": { "width": 40, "depth": 35 },
+  "dimensions": { "width": 40, "depth": 39 },
   "bedrooms": 3,
   "bathrooms": { "full": 2, "half": 1 },
   "kitchen": 1,

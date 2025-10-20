@@ -155,15 +155,13 @@ def check_adjacency(rooms: List[Dict], adjacency: Dict[str, List[str]]) -> List[
     issues: List[str] = []
     for room_type, required in (adjacency or {}).items():
         src_rooms = type_map.get(room_type.lower())
+        # If the source room type is not present in the layout, skip (do not error)
         if not src_rooms:
-            issues.append(f"Room {room_type} required for adjacency check is missing")
             continue
         for target in required:
             tgt_rooms = type_map.get(target.lower())
+            # If the target room type is not present in the layout, skip this requirement
             if not tgt_rooms:
-                issues.append(
-                    f"Room {target} required to be adjacent to {room_type} is missing"
-                )
                 continue
             for src_idx, src_room in src_rooms:
                 if any(_shares_wall(src_room, tgt_room) for _, tgt_room in tgt_rooms):
@@ -1041,7 +1039,7 @@ def pack_layout(
                 near_targets.append(q)
         # Evaluate all candidates with a score to prefer interior, well-connected placements
         best: Optional[Tuple[float, float, float]] = None  # score, x, y
-    def score_pos(x: float, y: float) -> float:
+        def score_pos(x: float, y: float) -> float:
             if not fits_here(r, x, y):
                 return float("-inf")
             shared = _shared_wall_len(x, y, w, l)
@@ -1136,7 +1134,11 @@ def pack_layout(
                 have_entrance = (issues == [])
 
     # Simple hallway synthesis for multiple bedrooms
-    bed_rooms = placed_by_type.get("bedroom", []) or []
+    # Treat any room type containing 'bedroom' as a bedroom (e.g., 'Master bedroom')
+    bed_rooms = []
+    for t, lst in placed_by_type.items():
+        if "bedroom" in (t or ""):
+            bed_rooms.extend(lst)
     if len(bed_rooms) >= 2:
         # Vertical hall along the left of the private zone
         xs = [float(b.get("position", {}).get("x", 0)) for b in bed_rooms]

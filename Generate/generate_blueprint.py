@@ -495,6 +495,28 @@ def main():
     except ValidationError as e:
         log.error("Invalid parameters: %s", e)
         sys.exit(1)
+
+    # Extract adjacency early so both CP and model backends can use it
+    adjacency = params.adjacency.root if params.adjacency else None
+
+    # Helper used by both CP and model paths
+    def _normalize_hints(hints_dict):
+        # Map keys/values to Title Case to match generated room type labels
+        norm = {}
+        for k, vals in (hints_dict or {}).items():
+            key = (k or "").strip()
+            if not key:
+                continue
+            key_t = key[:1].upper() + key[1:].lower()
+            norm[key_t] = []
+            for v in vals or []:
+                val = (v or "").strip()
+                if not val:
+                    continue
+                val_t = val[:1].upper() + val[1:].lower()
+                if val_t not in norm[key_t]:
+                    norm[key_t].append(val_t)
+        return norm
     
     # CHECK FEASIBILITY BEFORE GENERATION
     log.info("Checking layout feasibility...")
@@ -568,7 +590,7 @@ def main():
                     max_width=max_w,
                     max_length=max_h,
                     min_separation=args.min_separation,
-                    adjacency=adjacency if 'adjacency' in locals() else None,
+                    adjacency=adjacency,
                 )
                 record_issues("cp_validation", issues, attempt=1)
                 if not issues or args.backend == "cp":
@@ -643,7 +665,6 @@ def main():
 
 
     prefix = tk.encode_params(params.model_dump())
-    adjacency = params.adjacency.root if params.adjacency else None
     adjacency_requirements = tk.adjacency_requirements_from_params(adjacency)
 
     def has_overlap(issue_list):
@@ -748,23 +769,6 @@ def main():
                         merged[t2].append(t1)
         return merged
 
-    def _normalize_hints(hints_dict):
-        # Map keys/values to Title Case to match generated room type labels
-        norm = {}
-        for k, vals in (hints_dict or {}).items():
-            key = (k or "").strip()
-            if not key:
-                continue
-            key_t = key[:1].upper() + key[1:].lower()
-            norm[key_t] = []
-            for v in vals or []:
-                val = (v or "").strip()
-                if not val:
-                    continue
-                val_t = val[:1].upper() + val[1:].lower()
-                if val_t not in norm[key_t]:
-                    norm[key_t].append(val_t)
-        return norm
 
     def partial_validator(layout_dict):
         rooms = (layout_dict.get("layout") or {}).get("rooms", [])
