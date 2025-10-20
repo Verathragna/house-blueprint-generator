@@ -835,6 +835,9 @@ def pack_layout(
     min_hall_width: float = 3.0,
     min_gap: float = 3.0,
     avoid_peninsulas: bool = True,
+    ensure_entrance: bool = True,
+    entrance_min_clear: float = 3.0,
+    entrance_allowed_room_types: Optional[List[str]] = None,
 ) -> Dict:
     """Re-pack rooms onto a grid to eliminate overlaps and ensure connectivity.
 
@@ -852,6 +855,19 @@ def pack_layout(
 
     def snap(v: float) -> float:
         return grid * round(v / max(grid, 1e-6))
+
+    # Track if we have at least one valid exterior entrance candidate placed
+    have_entrance = False
+    entrance_allowed = [
+        "Entry",
+        "Foyer",
+        "Living Room",
+        "Dining Room",
+        "Kitchen",
+        "Hallway",
+        "Garage",
+    ] if entrance_allowed_room_types is None else entrance_allowed_room_types
+    entrance_allowed_l = {t.lower() for t in entrance_allowed}
 
     # Sort by area (largest first) for better packing
     indexed = []
@@ -1025,15 +1041,28 @@ def pack_layout(
                 near_targets.append(q)
         # Evaluate all candidates with a score to prefer interior, well-connected placements
         best: Optional[Tuple[float, float, float]] = None  # score, x, y
-        def score_pos(x: float, y: float) -> float:
+    def score_pos(x: float, y: float) -> float:
             if not fits_here(r, x, y):
                 return float("-inf")
             shared = _shared_wall_len(x, y, w, l)
-            # mild penalty for touching boundary
+            # mild penalty for touching boundary (discourage peninsulas), but allow entrance incentive
             boundary_pen = 0.0
-            if x <= 0 or y <= 0 or x + w >= max_width or y + l >= max_length:
+            touches_boundary = (x <= 1e-6) or (y <= 1e-6) or (x + w >= max_width - 1e-6) or (y + l >= max_length - 1e-6)
+            if touches_boundary:
                 boundary_pen = 0.5 * min(w, l)
-            return shared - boundary_pen
+            score = shared - boundary_pen
+            # Entrance incentive: if we don't yet have an entrance, and this room is an allowed type,
+            # reward placements that create a straight boundary contact span >= entrance_min_clear
+            if ensure_entrance and (rtype.lower() in entrance_allowed_l) and not have_entrance:
+                span = 0.0
+                if abs(x - 0.0) < 1e-6 or abs((x + w) - max_width) < 1e-6:
+                    span = l
+                if abs(y - 0.0) < 1e-6 or abs((y + l) - max_length) < 1e-6:
+                    span = max(span, w)
+                if span >= max(0.1, float(entrance_min_clear)):
+                    # Provide a significant bonus to prefer at least one boundary-contacting public room
+                    score += 5.0 * span
+            return score
         for tgt in near_targets:
             for x, y in candidate_positions_near(tgt, w, l):
                 if x < x_min or y < y_min or x > x_max or y > y_max:
@@ -1047,6 +1076,17 @@ def pack_layout(
             r["position"]["y"] = snap(y)
             placed.append(r)
             placed_by_type.setdefault(rtype.lower(), []).append(r)
+            # Update entrance flag if this placement provides it
+            if ensure_entrance and not have_entrance and (rtype.lower() in entrance_allowed_l):
+                issues = check_entrance(
+                    placed,
+                    max_width=max_width,
+                    max_length=max_length,
+                    min_clear=entrance_min_clear,
+                    allowed_room_types=list(entrance_allowed_l),
+                )
+                # check_entrance returns [] when ok
+                have_entrance = (issues == [])
             placed_ok = True
         if placed_ok:
             continue
@@ -1084,6 +1124,16 @@ def pack_layout(
             r["position"]["y"] = 0.0
             placed.append(r)
             placed_by_type.setdefault(rtype.lower(), []).append(r)
+            # Update entrance flag in case this accidentally satisfied it
+            if ensure_entrance and not have_entrance and (rtype.lower() in entrance_allowed_l):
+                issues = check_entrance(
+                    placed,
+                    max_width=max_width,
+                    max_length=max_length,
+                    min_clear=entrance_min_clear,
+                    allowed_room_types=list(entrance_allowed_l),
+                )
+                have_entrance = (issues == [])
 
     # Simple hallway synthesis for multiple bedrooms
     bed_rooms = placed_by_type.get("bedroom", []) or []
@@ -1121,6 +1171,51 @@ def pack_layout(
             }
             placed.append(hallway)
             placed_by_type.setdefault("hallway", []).append(hallway)
+
+    # Post-pass: if no entrance exists yet, force one by sliding a suitable room to the perimeter
+    if ensure_entrance and not have_entrance:
+        # Try Living Room, then Dining, Kitchen, Hallway, Garage
+        def try_force_boundary(room_types: List[str]) -> bool:
+            for t in room_types:
+                for r in placed_by_type.get(t.lower(), []) or []:
+                    size = r.get("size") or {}
+                    w = float(size.get("width", 0))
+                    l = float(size.get("length", 0))
+                    # Try each edge: bottom, top, left, right
+                    candidates = [
+                        (float(r.get("position", {}).get("x", 0)), 0.0),
+                        (float(r.get("position", {}).get("x", 0)), max_length - l),
+                        (0.0, float(r.get("position", {}).get("y", 0))),
+                        (max_width - w, float(r.get("position", {}).get("y", 0))),
+                    ]
+                    for x, y in candidates:
+                        # Check overlaps at this boundary position
+                        rx1, ry1, rx2, ry2 = x, y, x + w, y + l
+                        overlaps = False
+                        for q in placed:
+                            if q is r:
+                                continue
+                            qx1, qy1, qx2, qy2 = _room_bounds(q)
+                            if rx1 < qx2 and rx2 > qx1 and ry1 < qy2 and ry2 > qy1:
+                                overlaps = True
+                                break
+                        if overlaps:
+                            continue
+                        # Apply position
+                        r.setdefault("position", {})["x"] = max(0.0, min(x, max_width - w))
+                        r["position"]["y"] = max(0.0, min(y, max_length - l))
+                        # Re-check entrance
+                        ok = check_entrance(
+                            placed,
+                            max_width=max_width,
+                            max_length=max_length,
+                            min_clear=entrance_min_clear,
+                            allowed_room_types=list(entrance_allowed_l),
+                        )
+                        if not ok:
+                            return True
+            return False
+        have_entrance = try_force_boundary(["Living Room", "Dining Room", "Kitchen", "Hallway", "Garage"]) or have_entrance
 
     layout.setdefault("layout", {})["rooms"] = placed
     return clamp_bounds(layout, max_width, max_length)

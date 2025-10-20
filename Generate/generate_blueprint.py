@@ -545,12 +545,20 @@ def main():
                     "Garage": ["Laundry Room"],
                     "Laundry Room": ["Kitchen", "Garage"],
                 }
+                merged_hints = dict(_normalize_hints(default_hints))
+                if adjacency:
+                    # Merge user adjacency (symmetric) into hints
+                    for k, vals in _normalize_hints(adjacency).items():
+                        merged_hints.setdefault(k, [])
+                        for v in vals:
+                            if v not in merged_hints[k]:
+                                merged_hints[k].append(v)
                 cp_layout = pack_layout(
                     cp_layout,
                     max_width=max_w,
                     max_length=max_h,
                     grid=1.0,
-                    adjacency_hints=default_hints,
+                    adjacency_hints=merged_hints,
                     zoning=True,
                     min_hall_width=4.0,
                 )
@@ -740,6 +748,24 @@ def main():
                         merged[t2].append(t1)
         return merged
 
+    def _normalize_hints(hints_dict):
+        # Map keys/values to Title Case to match generated room type labels
+        norm = {}
+        for k, vals in (hints_dict or {}).items():
+            key = (k or "").strip()
+            if not key:
+                continue
+            key_t = key[:1].upper() + key[1:].lower()
+            norm[key_t] = []
+            for v in vals or []:
+                val = (v or "").strip()
+                if not val:
+                    continue
+                val_t = val[:1].upper() + val[1:].lower()
+                if val_t not in norm[key_t]:
+                    norm[key_t].append(val_t)
+        return norm
+
     def partial_validator(layout_dict):
         rooms = (layout_dict.get("layout") or {}).get("rooms", [])
         if not rooms:
@@ -856,12 +882,19 @@ def main():
                 "Garage": ["Laundry Room"],
                 "Laundry Room": ["Kitchen", "Garage"],
             }
+            merged_hints = dict(_normalize_hints(default_hints))
+            if adjacency:
+                for k, vals in _normalize_hints(adjacency).items():
+                    merged_hints.setdefault(k, [])
+                    for v in vals:
+                        if v not in merged_hints[k]:
+                            merged_hints[k].append(v)
             layout_json = pack_layout(
                 layout_json,
                 max_width=max_w,
                 max_length=max_h,
                 grid=1.0,
-                adjacency_hints=default_hints,
+                adjacency_hints=merged_hints,
                 zoning=True,
                 min_hall_width=4.0,
             )
@@ -932,6 +965,13 @@ def main():
             "Garage": ["Laundry Room"],
             "Laundry Room": ["Kitchen", "Garage"],
         }
+        merged_hints = dict(_normalize_hints(default_hints))
+        if adjacency:
+            for k, vals in _normalize_hints(adjacency).items():
+                merged_hints.setdefault(k, [])
+                for v in vals:
+                    if v not in merged_hints[k]:
+                        merged_hints[k].append(v)
         # Adjust grid size based on room count and density
         num_rooms = len(layout_json.get("layout", {}).get("rooms", []))
         if num_rooms > 8:
@@ -951,7 +991,7 @@ def main():
             max_width=max_w,
             max_length=max_h,
             grid=grid_size,
-            adjacency_hints=default_hints,
+            adjacency_hints=merged_hints,
             zoning=True,
             min_hall_width=min_hall,
         )
