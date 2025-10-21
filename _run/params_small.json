@@ -1,0 +1,9 @@
+{
+  "dimensions": { "width": 40, "depth": 40 },
+  "bedrooms": 2,
+  "bathrooms": { "full": 1, "half": 0 },
+  "kitchen": 1,
+  "livingRooms": 1,
+  "diningRooms": 1,
+  "laundryRooms": 1
+}

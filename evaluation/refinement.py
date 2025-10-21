@@ -5,6 +5,7 @@ import random
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 from evaluation.validators import clamp_bounds, resolve_overlaps
+from evaluation.scoring import compute_metrics, aggregate_cost
 
 
 def _room_bounds(room: Dict) -> Tuple[float, float, float, float]:
@@ -76,24 +77,24 @@ def _layout_cost(
     adjacency_pairs: Sequence[Tuple[str, str]],
     min_separation: float,
 ) -> float:
-    overlap_penalty = 1000.0
-    bounds_penalty = 200.0
-    separation_penalty = 200.0
-    adjacency_penalty = 50.0
+    """Composite cost combining hard-constraint penalties with multi-objective scoring."""
+    # Hard constraints (very large penalties)
+    overlap_penalty = 2_000.0
+    bounds_penalty = 500.0
+    separation_penalty = 300.0
+    adjacency_penalty = 60.0
 
     total_cost = 0.0
     bounds = [_room_bounds(room) for room in rooms]
 
-    # Overlap and separation penalties
+    # Overlap, bounds, separation
     for i in range(len(rooms)):
         rect_a = bounds[i]
-        # bounds checks
         over_left = max(0.0, -rect_a[0])
         over_bottom = max(0.0, -rect_a[1])
         over_right = max(0.0, rect_a[2] - max_width)
         over_top = max(0.0, rect_a[3] - max_length)
         total_cost += bounds_penalty * (over_left + over_bottom + over_right + over_top)
-
         for j in range(i + 1, len(rooms)):
             rect_b = bounds[j]
             overlap_area = _rect_overlap(rect_a, rect_b)
@@ -104,7 +105,7 @@ def _layout_cost(
                 if min_separation > 0 and dist < min_separation:
                     total_cost += separation_penalty * (min_separation - dist)
 
-    # Adjacency penalties
+    # Required adjacencies
     if adjacency_pairs:
         index = _build_type_index(rooms)
         for room_a, room_b in adjacency_pairs:
@@ -128,6 +129,10 @@ def _layout_cost(
                     break
             total_cost += adjacency_penalty * best
 
+    # Multi-objective soft scoring (area fit, daylight, circulation, wet-stack, wall cost, space-syntax)
+    layout_wrapper = {"layout": {"rooms": list(rooms)}}
+    metrics = compute_metrics(layout_wrapper, max_width=max_width, max_length=max_length)
+    total_cost += aggregate_cost(metrics)
     return total_cost
 
 

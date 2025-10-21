@@ -1,0 +1,72 @@
+{
+  "layout": {
+    "rooms": [
+      {
+        "type": "Living room",
+        "position": {
+          "x": 4.0,
+          "y": 7.0
+        },
+        "size": {
+          "width": 14,
+          "length": 12
+        }
+      },
+      {
+        "type": "Dining room",
+        "position": {
+          "x": 0.0,
+          "y": 0.0
+        },
+        "size": {
+          "width": 12,
+          "length": 12
+        }
+      },
+      {
+        "type": "Kitchen",
+        "position": {
+          "x": 0.0,
+          "y": 0.0
+        },
+        "size": {
+          "width": 12,
+          "length": 12
+        }
+      },
+      {
+        "type": "Master bedroom",
+        "position": {
+          "x": 28.0,
+          "y": 14.0
+        },
+        "size": {
+          "width": 12,
+          "length": 12
+        }
+      },
+      {
+        "type": "Laundry room",
+        "position": {
+          "x": 15.0,
+          "y": 26.0
+        },
+        "size": {
+          "width": 10,
+          "length": 10
+        }
+      },
+      {
+        "type": "Master bathroom",
+        "position": {
+          "x": 25.2,
+          "y": 0.0
+        },
+        "size": {
+          "width": 8,
+          "length": 12
+        }
+      }
+    ]
+  }
+}

@@ -787,6 +787,11 @@ def validate_layout(
     min_separation: float = 0,
     require_connectivity: bool = True,
     adjacency: Optional[Dict[str, List[str]]] = None,
+    *,
+    enable_accessibility: bool = False,
+    min_corridor_width: float = 3.0,
+    min_door_opening: float = 3.0,
+    bathroom_turn_diameter: float = 5.0,
 ) -> List[str]:
     """Validate layout geometry.
 
@@ -820,6 +825,22 @@ def validate_layout(
         issues.extend(check_adjacency(rooms, adjacency))
     if min_separation > 0:
         issues.extend(check_separation(rooms, min_separation, adjacency))
+    # Optional accessibility checks (ADA-lite)
+    if enable_accessibility:
+        try:
+            from evaluation.ada import validate_accessibility as _va
+            issues.extend(
+                _va(
+                    layout,
+                    adjacency=adjacency,
+                    min_corridor_width=min_corridor_width,
+                    min_door_opening=min_door_opening,
+                    bathroom_turn_diameter=bathroom_turn_diameter,
+                )
+            )
+        except Exception:
+            # Keep core validation robust even if optional module fails
+            pass
     return issues
 
 
